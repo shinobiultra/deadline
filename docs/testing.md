@@ -50,7 +50,8 @@ Repository hook config: `.pre-commit-config.yaml`
 CI also runs:
 
 - GH-pages smoke job (`GITHUB_PAGES=true`) validating map/globe rendering under repo subpath.
-- screenshot currency gate (`screens:check`) that fails if `docs/screens/*` would change.
+- screenshot currency gate (`screens:check`) that fails on meaningful visual drift in `docs/screens/*`
+  and tolerates tiny render noise below configured pixel ratio threshold.
 
 Install hooks:
 

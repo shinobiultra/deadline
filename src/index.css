@@ -26,6 +26,13 @@ body {
     radial-gradient(900px circle at 85% 120%, rgba(124, 255, 178, 0.08), transparent 55%), #05070d;
 }
 
+.capture-mode,
+.capture-mode * {
+  animation: none !important;
+  transition: none !important;
+  caret-color: transparent !important;
+}
+
 button,
 input,
 select,

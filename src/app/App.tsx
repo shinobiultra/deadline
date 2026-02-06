@@ -50,6 +50,7 @@ type DemoConfig = {
   debug: boolean
   initialView: ViewMode
   detailOpen: boolean
+  capture: boolean
 }
 
 type DeadlineDraft = {
@@ -116,13 +117,15 @@ function readDemoConfig(): DemoConfig {
       enabled: false,
       debug: false,
       initialView: '2d',
-      detailOpen: false
+      detailOpen: false,
+      capture: false
     }
   }
 
   const params = new URLSearchParams(window.location.search)
   const enabled = params.get('demo') === '1'
   const debug = params.get('debug') === '1'
+  const capture = params.get('capture') === '1'
   const requestedView = params.get('view')?.toLowerCase()
   const initialView: ViewMode = requestedView === '3d' ? '3d' : '2d'
   const detailOpen = requestedView === 'detail'
@@ -131,7 +134,8 @@ function readDemoConfig(): DemoConfig {
     enabled,
     debug,
     initialView,
-    detailOpen
+    detailOpen,
+    capture
   }
 }
 
@@ -201,8 +205,21 @@ export default function App() {
   const timezones = useMemo(() => listDeadlineTimezoneOptions(), [])
   const cityResults = useCities(cityQuery)
   const landmarks = useLandmarks()
-  const { status: timezonePolygonStatus, features: timezonePolygons } =
-    useTimezonePolygons(useTimezonePolygonsMode)
+  const demoOverridesEnabled = demo.enabled
+  const effectiveUseTimezonePolygonsMode = demoOverridesEnabled ? false : useTimezonePolygonsMode
+  const { status: timezonePolygonStatus, features: timezonePolygons } = useTimezonePolygons(
+    effectiveUseTimezonePolygonsMode
+  )
+  const effectiveLocation = demoOverridesEnabled ? null : location
+  const effectiveShowTimezones = demoOverridesEnabled ? true : showTimezones
+  const effectiveShowSolarTime = demoOverridesEnabled ? true : showSolarTime
+  const effectiveShowDayNight = demoOverridesEnabled ? true : showDayNight
+  const effectiveBrightDayLighting = demoOverridesEnabled ? true : brightDayLighting
+  const effectiveShowLandmarks = demoOverridesEnabled ? false : showLandmarks
+  const effectivePreviewMode = demoOverridesEnabled ? 'now' : previewMode
+  const effectiveScrubRatio = demoOverridesEnabled ? 0 : scrubRatio
+  const effectiveUseApparentSolar = demoOverridesEnabled ? false : useApparentSolar
+  const effectiveReducedMotion = demoOverridesEnabled ? true : reducedMotion
 
   const activeSlot = useMemo(
     () => slotsState.slots.find((slot) => slot.id === slotsState.activeId) ?? slotsState.slots[0],
@@ -232,33 +249,6 @@ export default function App() {
 
     saveDeadlineSlots(slotsState)
   }, [demo.enabled, slotsState])
-
-  useEffect(() => {
-    if (!demo.enabled) {
-      return
-    }
-
-    setLocation(null)
-    setPreviewMode('now')
-    setScrubRatio(0)
-    setShowLandmarks(false)
-    setUseTimezonePolygons(false)
-    setUseApparentSolar(false)
-    setShowDayNight(true)
-    setShowSolarTime(true)
-    setShowTimezones(true)
-  }, [
-    demo.enabled,
-    setLocation,
-    setPreviewMode,
-    setScrubRatio,
-    setShowLandmarks,
-    setUseTimezonePolygons,
-    setUseApparentSolar,
-    setShowDayNight,
-    setShowSolarTime,
-    setShowTimezones
-  ])
 
   const draftDirty = useMemo(() => {
     if (!activeSlot) {
@@ -339,7 +329,7 @@ export default function App() {
 
   const effectiveNowMs = demo.enabled ? DEMO_NOW_MS : nowMs
   const effectiveRenderNowMs = demo.enabled ? DEMO_NOW_MS : renderNowMs
-  const visualNowMs = previewMode === 'now' ? effectiveRenderNowMs : effectiveNowMs
+  const visualNowMs = effectivePreviewMode === 'now' ? effectiveRenderNowMs : effectiveNowMs
   const nowTime = useMemo(() => new Date(visualNowMs), [visualNowMs])
 
   const deadlineTimeDate = useMemo(() => {
@@ -354,14 +344,14 @@ export default function App() {
       return new Date(visualNowMs)
     }
 
-    if (previewMode === 'deadline') {
+    if (effectivePreviewMode === 'deadline') {
       return new Date(activeParseResult.deadlineUtcMs)
     }
 
-    if (previewMode === 'scrub') {
+    if (effectivePreviewMode === 'scrub') {
       const start = effectiveNowMs
       const end = activeParseResult.deadlineUtcMs
-      return new Date(start + (end - start) * scrubRatio)
+      return new Date(start + (end - start) * effectiveScrubRatio)
     }
 
     return new Date(visualNowMs)
@@ -369,8 +359,8 @@ export default function App() {
     activeParseResult.deadlineUtcMs,
     activeParseResult.valid,
     effectiveNowMs,
-    previewMode,
-    scrubRatio,
+    effectivePreviewMode,
+    effectiveScrubRatio,
     visualNowMs
   ])
 
@@ -379,32 +369,53 @@ export default function App() {
       return 0
     }
 
-    return solarDeadlineLongitude(displayTime, activeParseResult.targetMinutesOfDay, useApparentSolar)
-  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, displayTime, useApparentSolar])
+    return solarDeadlineLongitude(
+      displayTime,
+      activeParseResult.targetMinutesOfDay,
+      effectiveUseApparentSolar
+    )
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, displayTime, effectiveUseApparentSolar])
 
   const deadlineSolarLongitude = useMemo(() => {
     if (!activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined || !deadlineTimeDate) {
       return null
     }
 
-    return solarDeadlineLongitude(deadlineTimeDate, activeParseResult.targetMinutesOfDay, useApparentSolar)
-  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, deadlineTimeDate, useApparentSolar])
+    return solarDeadlineLongitude(
+      deadlineTimeDate,
+      activeParseResult.targetMinutesOfDay,
+      effectiveUseApparentSolar
+    )
+  }, [
+    activeParseResult.targetMinutesOfDay,
+    activeParseResult.valid,
+    deadlineTimeDate,
+    effectiveUseApparentSolar
+  ])
 
   const lineSpeed = useMemo(() => {
     if (!activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined) {
       return 15
     }
 
-    return solarLineSpeedDegreesPerHour(displayTime, activeParseResult.targetMinutesOfDay, useApparentSolar)
-  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, displayTime, useApparentSolar])
+    return solarLineSpeedDegreesPerHour(
+      displayTime,
+      activeParseResult.targetMinutesOfDay,
+      effectiveUseApparentSolar
+    )
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, displayTime, effectiveUseApparentSolar])
 
   const distance = useMemo(() => {
-    if (!location || !activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined) {
+    if (
+      !effectiveLocation ||
+      !activeParseResult.valid ||
+      activeParseResult.targetMinutesOfDay === undefined
+    ) {
       return null
     }
 
-    return solarDistanceToMeridian(location.lat, location.lon, solarLongitude)
-  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, location, solarLongitude])
+    return solarDistanceToMeridian(effectiveLocation.lat, effectiveLocation.lon, solarLongitude)
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, effectiveLocation, solarLongitude])
 
   const crossingPlan = useMemo(() => {
     if (
@@ -420,15 +431,15 @@ export default function App() {
       rangeStartMs: effectiveNowMs,
       rangeEndMs: activeParseResult.deadlineUtcMs,
       targetMinutesOfDay: activeParseResult.targetMinutesOfDay,
-      apparentSolar: useApparentSolar
+      apparentSolar: effectiveUseApparentSolar
     })
   }, [
     activeParseResult.deadlineUtcMs,
     activeParseResult.targetMinutesOfDay,
     activeParseResult.valid,
     effectiveNowMs,
-    landmarks,
-    useApparentSolar
+    effectiveUseApparentSolar,
+    landmarks
   ])
 
   const remainingMs = activeParseResult.deadlineUtcMs
@@ -679,7 +690,7 @@ export default function App() {
     activeParseResult.deadlineUtcMs,
     activeParseResult.targetMinutesOfDay,
     slotsState.activeId,
-    useApparentSolar
+    effectiveUseApparentSolar
   ])
 
   useEffect(() => {
@@ -794,14 +805,30 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeydown)
   }, [applyDraftToActive, discardDraft, draftDirty, duplicateActiveSlot, slotsState.slots, switchSlot])
 
+  const debugPerf = demo.enabled
+    ? {
+        fps: 60,
+        renderDriftMs: 0,
+        terminatorComputeMs: 0
+      }
+    : {
+        fps: renderFps,
+        renderDriftMs: renderDriftMs,
+        terminatorComputeMs
+      }
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-bg text-ink" ref={rootRef}>
+    <main
+      className={`relative min-h-screen overflow-hidden bg-bg text-ink ${demo.capture ? 'capture-mode' : ''}`}
+      ref={rootRef}
+    >
       <div className="noise-overlay" />
       <div className="scanline-overlay" />
 
       <div className="relative mx-auto grid max-w-[1540px] items-start gap-3 px-3 py-3 md:grid-cols-[360px_1fr]">
         <aside className="md:sticky md:top-3">
           <CommandPanel
+            nowMs={effectiveNowMs}
             deadlineDate={draftDeadline.date}
             setDeadlineDate={(value) => updateDraftField({ date: value })}
             deadlineTime={draftDeadline.time}
@@ -842,23 +869,51 @@ export default function App() {
             applyDisabled={
               demo.enabled || !draftParseResult.valid || !draftDirty || Boolean(activeSlot?.locked)
             }
-            location={location}
-            setLocation={setLocation}
+            location={effectiveLocation}
+            setLocation={(value) => {
+              if (!demoOverridesEnabled) {
+                setLocation(value)
+              }
+            }}
             cityQuery={cityQuery}
             setCityQuery={setCityQuery}
             cityResults={cityResults}
-            showTimezones={showTimezones}
-            setShowTimezones={setShowTimezones}
-            showSolarTime={showSolarTime}
-            setShowSolarTime={setShowSolarTime}
-            showDayNight={showDayNight}
-            setShowDayNight={setShowDayNight}
-            showLandmarks={showLandmarks}
-            setShowLandmarks={setShowLandmarks}
-            previewMode={previewMode}
-            setPreviewMode={setPreviewMode}
-            scrubRatio={scrubRatio}
-            setScrubRatio={setScrubRatio}
+            showTimezones={effectiveShowTimezones}
+            setShowTimezones={(value) => {
+              if (!demoOverridesEnabled) {
+                setShowTimezones(value)
+              }
+            }}
+            showSolarTime={effectiveShowSolarTime}
+            setShowSolarTime={(value) => {
+              if (!demoOverridesEnabled) {
+                setShowSolarTime(value)
+              }
+            }}
+            showDayNight={effectiveShowDayNight}
+            setShowDayNight={(value) => {
+              if (!demoOverridesEnabled) {
+                setShowDayNight(value)
+              }
+            }}
+            showLandmarks={effectiveShowLandmarks}
+            setShowLandmarks={(value) => {
+              if (!demoOverridesEnabled) {
+                setShowLandmarks(value)
+              }
+            }}
+            previewMode={effectivePreviewMode}
+            setPreviewMode={(value) => {
+              if (!demoOverridesEnabled) {
+                setPreviewMode(value)
+              }
+            }}
+            scrubRatio={effectiveScrubRatio}
+            setScrubRatio={(value) => {
+              if (!demoOverridesEnabled) {
+                setScrubRatio(value)
+              }
+            }}
             demoMode={demo.enabled}
           />
         </aside>
@@ -948,10 +1003,11 @@ export default function App() {
                   targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
                   solarNowLongitude={solarLongitude}
                   solarDeadlineLongitude={deadlineSolarLongitude}
-                  location={location}
-                  showLandmarks={showLandmarks}
+                  location={effectiveLocation}
+                  showLandmarks={effectiveShowLandmarks}
                   landmarks={landmarks}
                   onZoomedOutExit={handleDetailZoomOutExit}
+                  captureMode={demo.capture}
                 />
               ) : viewMode === '2d' ? (
                 <Map2DView
@@ -961,18 +1017,18 @@ export default function App() {
                   targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
                   deadlineZoneLabel={deadlineZoneLabel}
                   deadlineOffsetMinutes={activeParseResult.selectedOffsetMinutes}
-                  showTimezones={showTimezones}
-                  showSolarTime={showSolarTime}
-                  showDayNight={showDayNight}
-                  brightDayLighting={brightDayLighting}
-                  showLandmarks={showLandmarks}
-                  useApparentSolar={useApparentSolar}
-                  useTimezonePolygons={useTimezonePolygonsMode}
+                  showTimezones={effectiveShowTimezones}
+                  showSolarTime={effectiveShowSolarTime}
+                  showDayNight={effectiveShowDayNight}
+                  brightDayLighting={effectiveBrightDayLighting}
+                  showLandmarks={effectiveShowLandmarks}
+                  useApparentSolar={effectiveUseApparentSolar}
+                  useTimezonePolygons={effectiveUseTimezonePolygonsMode}
                   timezonePolygons={timezonePolygons}
                   civilGlowMinutes={civilGlowMinutes}
-                  location={location}
+                  location={effectiveLocation}
                   landmarks={landmarks}
-                  reducedMotion={reducedMotion}
+                  reducedMotion={effectiveReducedMotion}
                   onPerf={({ terminatorComputeMs: ms }) => setTerminatorComputeMs(ms)}
                 />
               ) : (
@@ -991,13 +1047,14 @@ export default function App() {
                     targetClockLabel={targetClockLabel}
                     deadlineZoneLabel={deadlineZoneLabel}
                     deadlineOffsetMinutes={activeParseResult.selectedOffsetMinutes}
-                    showSolarTime={showSolarTime}
-                    showDayNight={showDayNight}
-                    showLandmarks={showLandmarks}
-                    useApparentSolar={useApparentSolar}
-                    reducedMotion={reducedMotion}
-                    location={location}
+                    showSolarTime={effectiveShowSolarTime}
+                    showDayNight={effectiveShowDayNight}
+                    showLandmarks={effectiveShowLandmarks}
+                    useApparentSolar={effectiveUseApparentSolar}
+                    reducedMotion={effectiveReducedMotion}
+                    location={effectiveLocation}
                     landmarks={landmarks}
+                    captureMode={demo.capture}
                   />
                 </Suspense>
               )
@@ -1007,7 +1064,7 @@ export default function App() {
               </div>
             )}
 
-            <NearDeadlineEffects remainingMs={remainingMs} reducedMotion={reducedMotion} />
+            <NearDeadlineEffects remainingMs={remainingMs} reducedMotion={effectiveReducedMotion} />
 
             {remainingMs <= 60 * 60_000 && remainingMs > 0 ? (
               <div className="pointer-events-none absolute bottom-3 right-3 rounded-md border border-amber-300/45 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-100">
@@ -1025,24 +1082,36 @@ export default function App() {
             <StatsStrip
               solarLongitude={solarLongitude}
               speedDegPerHour={lineSpeed}
-              useApparentSolar={useApparentSolar}
+              useApparentSolar={effectiveUseApparentSolar}
               deltaMinutesFromLocation={distance?.deltaMinutes}
               kmFromLocation={distance?.distanceKm}
             />
 
             <DistanceBox
-              location={location}
+              location={effectiveLocation}
               deltaMinutes={distance?.deltaMinutes}
               deltaKm={distance?.distanceKm}
             />
 
             <SettingsDrawer
-              useApparentSolar={useApparentSolar}
-              setUseApparentSolar={setUseApparentSolar}
-              useTimezonePolygons={useTimezonePolygonsMode}
-              setUseTimezonePolygons={setUseTimezonePolygons}
-              brightDayLighting={brightDayLighting}
-              setBrightDayLighting={setBrightDayLighting}
+              useApparentSolar={effectiveUseApparentSolar}
+              setUseApparentSolar={(value) => {
+                if (!demoOverridesEnabled) {
+                  setUseApparentSolar(value)
+                }
+              }}
+              useTimezonePolygons={effectiveUseTimezonePolygonsMode}
+              setUseTimezonePolygons={(value) => {
+                if (!demoOverridesEnabled) {
+                  setUseTimezonePolygons(value)
+                }
+              }}
+              brightDayLighting={effectiveBrightDayLighting}
+              setBrightDayLighting={(value) => {
+                if (!demoOverridesEnabled) {
+                  setBrightDayLighting(value)
+                }
+              }}
               timezonePolygonStatus={timezonePolygonStatus}
               civilGlowMinutes={civilGlowMinutes}
               setCivilGlowMinutes={setCivilGlowMinutes}
@@ -1052,8 +1121,12 @@ export default function App() {
               setEnableCrossingAlerts={setEnableCrossingAlerts}
               enableBrowserNotifications={enableBrowserNotifications}
               setEnableBrowserNotifications={setEnableBrowserNotifications}
-              reducedMotion={reducedMotion}
-              setReducedMotion={setReducedMotion}
+              reducedMotion={effectiveReducedMotion}
+              setReducedMotion={(value) => {
+                if (!demoOverridesEnabled) {
+                  setReducedMotion(value)
+                }
+              }}
             />
           </div>
         </section>
@@ -1068,11 +1141,7 @@ export default function App() {
         enabled={debugMode}
         rootRef={rootRef}
         onClose={() => setDebugMode(false)}
-        perf={{
-          fps: renderFps,
-          renderDriftMs: renderDriftMs,
-          terminatorComputeMs
-        }}
+        perf={debugPerf}
       />
     </main>
   )

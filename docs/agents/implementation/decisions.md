@@ -47,3 +47,7 @@ Reason: hover/zoom/follow controls are core behavior and must stay functional un
 ## D-012: docs screenshot baseline is a deterministic demo scenario
 
 Reason: fixed deadline/time/view state prevents screenshot drift, makes diffs meaningful, and enforces UI docs currency in CI.
+
+## D-013: visual screenshot gate should use pixel-drift tolerance, not raw file-byte equality
+
+Reason: headless WebGL captures can introduce tiny non-semantic pixel jitter; gating on bounded pixel drift catches real regressions without false failures.

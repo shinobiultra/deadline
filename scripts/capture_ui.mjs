@@ -16,16 +16,24 @@ await page.addInitScript(() => window.localStorage.clear())
 async function shot(name) {
   const docsPath = path.join(docsScreensDir, name)
   const artifactsPath = path.join(artifactsDir, name)
-  await page.screenshot({ path: docsPath, fullPage: true })
+  await page.screenshot({
+    path: docsPath,
+    fullPage: true,
+    animations: 'disabled',
+    caret: 'hide',
+    scale: 'css'
+  })
   await fs.copyFile(docsPath, artifactsPath)
 }
 
-await page.goto(`${baseUrl}/?demo=1&view=2d`, { waitUntil: 'networkidle' })
-await page.waitForTimeout(900)
+await page.goto(`${baseUrl}/?demo=1&capture=1&view=2d`, { waitUntil: 'networkidle' })
+await page.waitForSelector('[data-testid="map2d-view"]')
+await page.waitForTimeout(250)
 await shot('demo-2d.png')
 
-await page.goto(`${baseUrl}/?demo=1&view=3d`, { waitUntil: 'networkidle' })
-await page.waitForTimeout(1600)
+await page.goto(`${baseUrl}/?demo=1&capture=1&view=3d`, { waitUntil: 'networkidle' })
+await page.waitForSelector('[data-testid="globe3d-view"][data-globe-ready="1"][data-world-ready="1"]')
+await page.waitForTimeout(250)
 await shot('demo-3d.png')
 
 const globe = page.getByTestId('globe3d-view')
@@ -36,20 +44,23 @@ if (globeBox) {
   await page.mouse.move(globeBox.x + globeBox.width * 0.7, globeBox.y + globeBox.height * 0.44)
   await page.mouse.up()
 }
-await page.waitForTimeout(700)
+await page.waitForTimeout(180)
 await shot('demo-3d-rotated.png')
 
-await page.goto(`${baseUrl}/?demo=1&view=detail`, { waitUntil: 'networkidle' })
-await page.waitForTimeout(1400)
+await page.goto(`${baseUrl}/?demo=1&capture=1&view=detail`, { waitUntil: 'networkidle' })
+await page.waitForSelector('[data-testid="detail-map-view"][data-loaded="1"]')
+await page.waitForTimeout(250)
 await shot('demo-detail.png')
 
-await page.goto(`${baseUrl}/?demo=1&debug=1&view=2d`, { waitUntil: 'networkidle' })
-await page.waitForTimeout(900)
+await page.goto(`${baseUrl}/?demo=1&capture=1&debug=1&view=2d`, { waitUntil: 'networkidle' })
+await page.waitForSelector('[data-testid="map2d-view"]')
+await page.waitForTimeout(250)
 await shot('demo-debug.png')
 
 await page.setViewportSize({ width: 390, height: 844 })
-await page.goto(`${baseUrl}/?demo=1&view=2d`, { waitUntil: 'networkidle' })
-await page.waitForTimeout(900)
+await page.goto(`${baseUrl}/?demo=1&capture=1&view=2d`, { waitUntil: 'networkidle' })
+await page.waitForSelector('[data-testid="map2d-view"]')
+await page.waitForTimeout(250)
 await shot('demo-mobile-2d.png')
 
 await browser.close()

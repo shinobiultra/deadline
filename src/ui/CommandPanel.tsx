@@ -23,6 +23,7 @@ import { Segmented } from './Segmented'
 import { SwitchPill } from './SwitchPill'
 
 type CommandPanelProps = {
+  nowMs: number
   deadlineDate: string
   setDeadlineDate: (value: string) => void
   deadlineTime: string
@@ -158,6 +159,7 @@ function readWorkflowCollapsePreference() {
 
 export function CommandPanel(props: CommandPanelProps) {
   const {
+    nowMs,
     deadlineDate,
     setDeadlineDate,
     deadlineTime,
@@ -238,7 +240,8 @@ export function CommandPanel(props: CommandPanelProps) {
     }
   }, [])
 
-  const zoneNow = DateTime.now().setZone(deadlineZone)
+  const referenceNow = useMemo(() => DateTime.fromMillis(nowMs), [nowMs])
+  const zoneNow = referenceNow.setZone(deadlineZone)
   const nowZoneLabel = zoneNow.isValid ? zoneNow.toFormat("ccc, dd LLL HH:mm 'local'") : 'invalid timezone'
 
   const timezoneMatches = useMemo(() => {
@@ -367,7 +370,7 @@ export function CommandPanel(props: CommandPanelProps) {
   const quickShift = (delta: { days?: number; hours?: number; minutes?: number }) => {
     const base =
       parseCurrentInput(deadlineDate, deadlineTime, deadlineZone) ??
-      DateTime.now().setZone(deadlineZone || 'UTC')
+      referenceNow.setZone(deadlineZone || 'UTC')
     const next = base.plus(delta).set({ second: 0, millisecond: 0 })
     setDeadlineDate(next.toISODate() ?? deadlineDate)
     setDeadlineTime(next.toFormat('HH:mm'))
@@ -717,7 +720,7 @@ export function CommandPanel(props: CommandPanelProps) {
               type="button"
               className="btn-ghost px-2 py-1 text-[11px]"
               onClick={() => {
-                const next = DateTime.now()
+                const next = referenceNow
                   .setZone(deadlineZone || 'UTC')
                   .plus({ day: 1 })
                   .set({ second: 0, millisecond: 0 })

@@ -27,6 +27,7 @@ type Globe3DViewProps = {
   showLandmarks: boolean
   useApparentSolar: boolean
   reducedMotion: boolean
+  captureMode?: boolean
   location?: LocationPoint | null
   landmarks: Array<{ id: string; name: string; lat: number; lon: number }>
 }
@@ -142,6 +143,7 @@ export default function Globe3DView({
   showLandmarks,
   useApparentSolar,
   reducedMotion,
+  captureMode = false,
   location,
   landmarks
 }: Globe3DViewProps) {
@@ -380,14 +382,14 @@ export default function Globe3DView({
     }
 
     const controls = globe.controls()
-    controls.enableDamping = true
-    controls.dampingFactor = 0.08
+    controls.enableDamping = !captureMode
+    controls.dampingFactor = captureMode ? 0 : 0.08
     controls.rotateSpeed = 0.66
     controls.zoomSpeed = 0.82
     controls.enablePan = false
-    controls.autoRotate = !reducedMotion && !manualOrbitSeen
+    controls.autoRotate = !captureMode && !reducedMotion && !manualOrbitSeen
     controls.autoRotateSpeed = 0.27
-  }, [globeReady, manualOrbitSeen, reducedMotion])
+  }, [captureMode, globeReady, manualOrbitSeen, reducedMotion])
 
   useEffect(() => {
     const globe = globeRef.current
@@ -471,6 +473,8 @@ export default function Globe3DView({
     <div
       className="border-cyan-400/20 relative h-full min-h-[320px] rounded-xl border bg-black/30"
       data-testid="globe3d-view"
+      data-globe-ready={globeReady ? '1' : '0'}
+      data-world-ready={countries.length > 0 ? '1' : '0'}
       ref={wrapperRef}
       onPointerDownCapture={(event) => {
         if (event.target instanceof HTMLCanvasElement) {

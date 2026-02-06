@@ -68,3 +68,8 @@
   - `npm run test:e2e:gh-pages`
   - `npm run ui:capture`
 - Bumped project version to `0.3.1`.
+- Added capture-mode hardening for docs screenshots:
+  - `?demo=1&capture=1` mode (reduced-motion + frozen operational defaults)
+  - detail-view deterministic capture style (no external tile dependency)
+  - capture script waits for explicit 3D/detail readiness markers
+- Updated screenshot drift gate to compare pixel deltas with a strict tolerance threshold instead of raw file-byte equality.

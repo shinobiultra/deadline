@@ -21,5 +21,5 @@
 - Deadline safety: slot manager + draft/apply/discard + slot lock to prevent accidental overwrites.
 - Debug tooling: overlap detector + screenshot/layout export.
 - GH-pages safety: base-path aware build + runtime asset probes + CI subpath smoke tests.
-- Docs/screens safety: deterministic `?demo=1` capture baseline + CI screenshot drift gate.
+- Docs/screens safety: deterministic `?demo=1&capture=1` baseline + CI screenshot drift gate with tight pixel tolerance.
 - Known gap: timezone polygon data is still optional to avoid default ODbL payload coupling.

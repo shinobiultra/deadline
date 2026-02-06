@@ -56,13 +56,13 @@ The command panel shows both:
 
 ## Screenshot Baseline
 
-- demo mode URL: `?demo=1`
+- demo mode URL: `?demo=1&capture=1`
 - fixed demo deadline: `2026-02-05 00:00 AoE` (`2026-02-05 12:00 UTC`, `21:00 JST`)
 - frozen demo now: `2026-02-05T08:21:44Z`
 - view presets for capture:
-  - `?demo=1&view=2d`
-  - `?demo=1&view=3d`
-  - `?demo=1&view=detail`
+  - `?demo=1&capture=1&view=2d`
+  - `?demo=1&capture=1&view=3d`
+  - `?demo=1&capture=1&view=detail`
 
 ## Control Audit
 

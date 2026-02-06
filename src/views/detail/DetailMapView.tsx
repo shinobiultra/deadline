@@ -18,6 +18,7 @@ type DetailMapViewProps = {
   showLandmarks: boolean
   landmarks: Landmark[]
   onZoomedOutExit?: () => void
+  captureMode?: boolean
 }
 
 type DetailLineFeatureProps = {
@@ -58,6 +59,21 @@ const OPEN_MAP_STYLE: maplibregl.StyleSpecification = {
         'raster-hue-rotate': 192,
         'raster-brightness-min': 0.04,
         'raster-brightness-max': 0.42
+      }
+    }
+  ]
+}
+
+const CAPTURE_MAP_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  name: 'deadLINE-capture-style',
+  sources: {},
+  layers: [
+    {
+      id: 'capture-background',
+      type: 'background',
+      paint: {
+        'background-color': '#11263f'
       }
     }
   ]
@@ -168,7 +184,8 @@ export function DetailMapView(props: DetailMapViewProps) {
     location,
     showLandmarks,
     landmarks,
-    onZoomedOutExit
+    onZoomedOutExit,
+    captureMode = false
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -236,7 +253,7 @@ export function DetailMapView(props: DetailMapViewProps) {
 
     const map = new maplibregl.Map({
       container,
-      style: OPEN_MAP_STYLE,
+      style: captureMode ? CAPTURE_MAP_STYLE : OPEN_MAP_STYLE,
       center: initialCenterRef.current,
       zoom: initialHasLocationRef.current ? 9.4 : 2.6,
       pitch: initialModeRef.current === '3d' ? 60 : 0,
@@ -490,7 +507,7 @@ export function DetailMapView(props: DetailMapViewProps) {
       mapRef.current = null
       setLoaded(false)
     }
-  }, [onZoomedOutExit])
+  }, [captureMode, onZoomedOutExit])
 
   useEffect(() => {
     const map = mapRef.current
@@ -555,6 +572,7 @@ export function DetailMapView(props: DetailMapViewProps) {
     <div
       className="border-cyan-400/30 relative h-full min-h-[320px] rounded-xl border bg-black/20"
       data-testid="detail-map-view"
+      data-loaded={loaded ? '1' : '0'}
     >
       <div className="border-cyan-300/35 text-cyan-100 absolute left-2 top-2 z-20 grid gap-2 rounded-md border bg-black/70 px-2 py-2 text-[11px] shadow-neon">
         <div className="flex flex-wrap gap-2">
