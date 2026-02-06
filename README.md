@@ -7,7 +7,7 @@ Minimal OSS web app that visualizes a deadline as moving civil/solar lines over 
 - react + typescript + vite
 - luxon (timezone-safe parsing)
 - d3-geo canvas (2d)
-- react-three-fiber / three (3d globe)
+- react-globe.gl / globe.gl / three (3d globe with drag/zoom orbit controls)
 - zustand + localStorage
 - vitest + fast-check + playwright
 - vite pwa (offline shell + cached static assets)
@@ -44,11 +44,13 @@ Then open `http://localhost:4173`.
 ## manual smoke checklist
 
 1. Enter a deadline date/time/timezone and confirm countdown updates.
-2. Toggle between `2d map` and `3d globe`.
-3. Toggle day/night, solar line, timezones.
-4. Set location (city chip or geolocation) and confirm distance box updates.
-5. Open `settings`, enable optional notifications, and check toast behavior.
-6. Switch preview mode from `now` to `at deadline`.
+2. Set timezone to `Anywhere on Earth (AoE, UTC-12)` and confirm it is accepted.
+3. Toggle between `2d map` and `3d globe`.
+4. Toggle day/night, solar line, timezones.
+5. Set location (city chip or geolocation) and confirm distance box updates.
+6. Open `settings`, enable optional notifications, and check toast behavior.
+7. Switch preview mode from `now` to `at deadline`.
+8. On 2d map: drag to pan and use mouse wheel to zoom, then `reset view`.
 
 ## optional timezone polygon accuracy mode
 

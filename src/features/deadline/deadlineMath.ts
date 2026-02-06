@@ -1,6 +1,15 @@
 import { DateTime } from 'luxon'
 import type { DeadlineInput, DeadlineParseResult } from './types'
 
+export const AOE_IANA_ZONE = 'Etc/GMT+12'
+export const AOE_LABEL = 'Anywhere on Earth (AoE, UTC-12)'
+
+export type TimezoneOption = {
+  value: string
+  label: string
+  searchTerms: string[]
+}
+
 function parseDate(date: string): { year: number; month: number; day: number } | null {
   const [year, month, day] = date.split('-').map(Number)
   if (!year || !month || !day) {
@@ -26,6 +35,27 @@ function parseTime(time: string): { hour: number; minute: number } | null {
   return { hour, minute }
 }
 
+export function normalizeDeadlineZone(zone: string): string {
+  const trimmed = zone.trim()
+  const normalized = trimmed.toLowerCase()
+
+  if (
+    normalized === 'aoe' ||
+    normalized === 'anywhere on earth' ||
+    normalized === 'anywhere on earth (aoe)' ||
+    normalized === 'anywhere on earth (aoe, utc-12)' ||
+    normalized === 'utc-12'
+  ) {
+    return AOE_IANA_ZONE
+  }
+
+  return trimmed
+}
+
+export function describeTimezone(zone: string): string {
+  return zone === AOE_IANA_ZONE ? AOE_LABEL : zone
+}
+
 export function parseDeadlineInput(input: DeadlineInput): DeadlineParseResult {
   const dateParts = parseDate(input.date)
   const timeParts = parseTime(input.time)
@@ -36,6 +66,8 @@ export function parseDeadlineInput(input: DeadlineInput): DeadlineParseResult {
 
   const { year, month, day } = dateParts
   const { hour, minute } = timeParts
+  const zone = normalizeDeadlineZone(input.zone)
+
   const dt = DateTime.fromObject(
     {
       year,
@@ -47,7 +79,7 @@ export function parseDeadlineInput(input: DeadlineInput): DeadlineParseResult {
       millisecond: 0
     },
     {
-      zone: input.zone
+      zone
     }
   )
 
@@ -99,4 +131,35 @@ export function listIanaTimezones(): string[] {
   }
 
   return ['UTC']
+}
+
+export function listDeadlineTimezoneOptions(): TimezoneOption[] {
+  const zones = Array.from(new Set([...listIanaTimezones(), AOE_IANA_ZONE]))
+
+  return zones
+    .sort((a, b) => {
+      if (a === AOE_IANA_ZONE) {
+        return -1
+      }
+      if (b === AOE_IANA_ZONE) {
+        return 1
+      }
+      return a.localeCompare(b)
+    })
+    .map((zone) => {
+      if (zone === AOE_IANA_ZONE) {
+        return {
+          value: zone,
+          label: AOE_LABEL,
+          searchTerms: [zone.toLowerCase(), 'aoe', 'anywhere on earth', 'utc-12', 'utc -12']
+        }
+      }
+
+      const lower = zone.toLowerCase()
+      return {
+        value: zone,
+        label: zone,
+        searchTerms: [lower, lower.replace(/\//g, ' '), lower.replace(/_/g, ' ')]
+      }
+    })
 }

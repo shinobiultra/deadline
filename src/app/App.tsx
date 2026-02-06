@@ -9,7 +9,7 @@ import { ToastStack, type ToastItem } from '@/ui/ToastStack'
 import { Map2DView } from '@/views/map2d/Map2DView'
 import { useTimezonePolygons } from '@/features/civil/useTimezonePolygons'
 import { useCities } from '@/features/deadline/cities'
-import { parseDeadlineInput, listIanaTimezones } from '@/features/deadline/deadlineMath'
+import { listDeadlineTimezoneOptions, normalizeDeadlineZone, parseDeadlineInput } from '@/features/deadline/deadlineMath'
 import { useDeadlineStore } from '@/features/deadline/store'
 import { useLandmarks } from '@/features/landmarks/useLandmarks'
 import { computeLandmarkCrossings } from '@/features/landmarks/crossings'
@@ -67,7 +67,7 @@ export default function App() {
     setEnableBrowserNotifications
   } = useDeadlineStore()
 
-  const timezones = useMemo(() => listIanaTimezones(), [])
+  const timezones = useMemo(() => listDeadlineTimezoneOptions(), [])
   const cityResults = useCities(cityQuery)
   const landmarks = useLandmarks()
   const { status: timezonePolygonStatus, features: timezonePolygons } = useTimezonePolygons(useTimezonePolygonsMode)
@@ -214,7 +214,7 @@ export default function App() {
             deadlineTime={deadlineTime}
             setDeadlineTime={setDeadlineTime}
             deadlineZone={deadlineZone}
-            setDeadlineZone={setDeadlineZone}
+            setDeadlineZone={(value) => setDeadlineZone(normalizeDeadlineZone(value))}
             timezoneOptions={timezones}
             parseResult={parseResult}
             ambiguousPreference={ambiguousPreference}
@@ -268,14 +268,14 @@ export default function App() {
             <h1 className="font-mono text-sm tracking-[0.18em] text-cyan-100">deadline</h1>
             <div className="flex items-center gap-2">
               <button
-                className={`rounded px-2 py-1 ${viewMode === '2d' ? 'bg-cyan-400/20 text-neon' : 'bg-black/20 text-cyan-100/65'}`}
+                className={`btn-toggle px-2 py-1 ${viewMode === '2d' ? 'active' : ''}`}
                 type="button"
                 onClick={() => setViewMode('2d')}
               >
                 2d map
               </button>
               <button
-                className={`rounded px-2 py-1 ${viewMode === '3d' ? 'bg-cyan-400/20 text-neon' : 'bg-black/20 text-cyan-100/65'}`}
+                className={`btn-toggle px-2 py-1 ${viewMode === '3d' ? 'active' : ''}`}
                 type="button"
                 onClick={() => setViewMode('3d')}
               >
@@ -314,6 +314,7 @@ export default function App() {
                     showSolarTime={showSolarTime}
                     showDayNight={showDayNight}
                     useApparentSolar={useApparentSolar}
+                    location={location}
                   />
                 </Suspense>
               )

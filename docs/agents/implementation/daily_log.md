@@ -11,4 +11,7 @@
 - Added offline datasets and PWA caching for app shell/data.
 - Added unit/property/e2e tests and CI/deploy workflows.
 - Added optional timezone polygon accuracy mode with drop-in dataset path (`public/data/timezones/timezones.geojson`) and fallback to offset bands.
+- Upgraded timezone UX to reliable searchable select and added AoE (`Etc/GMT+12`) alias support.
+- Replaced custom 3D prototype renderer with `react-globe.gl` implementation including drag/zoom orbit controls and sun-driven lighting.
+- Added 2D map drag/zoom/reset interactions and improved button styling/motion treatments.
 - Validation completed: lint, vitest suite, production build, playwright e2e pass.

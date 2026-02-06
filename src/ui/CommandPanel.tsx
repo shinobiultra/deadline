@@ -1,5 +1,7 @@
 import { DateTime } from 'luxon'
+import { useMemo, useRef, useState } from 'react'
 import type { CityRecord } from '@/features/deadline/cities'
+import { AOE_IANA_ZONE, describeTimezone, type TimezoneOption } from '@/features/deadline/deadlineMath'
 import type { DeadlineParseResult, LocationPoint, PreviewMode } from '@/features/deadline/types'
 
 type CommandPanelProps = {
@@ -9,7 +11,7 @@ type CommandPanelProps = {
   setDeadlineTime: (value: string) => void
   deadlineZone: string
   setDeadlineZone: (value: string) => void
-  timezoneOptions: string[]
+  timezoneOptions: TimezoneOption[]
   parseResult: DeadlineParseResult
   ambiguousPreference: 'earlier' | 'later'
   setAmbiguousPreference: (value: 'earlier' | 'later') => void
@@ -55,7 +57,34 @@ export function CommandPanel(props: CommandPanelProps) {
     setPreviewMode
   } = props
 
-  const nowZoneLabel = DateTime.now().setZone(deadlineZone).toFormat("ccc, dd LLL HH:mm 'local'")
+  const dateInputRef = useRef<HTMLInputElement>(null)
+  const timeInputRef = useRef<HTMLInputElement>(null)
+  const [timezoneSearch, setTimezoneSearch] = useState('')
+
+  const zoneNow = DateTime.now().setZone(deadlineZone)
+  const nowZoneLabel = zoneNow.isValid ? zoneNow.toFormat("ccc, dd LLL HH:mm 'local'") : 'invalid timezone'
+
+  const timezoneMatches = useMemo(() => {
+    const query = timezoneSearch.trim().toLowerCase()
+    const baseMatches = (
+      query
+        ? timezoneOptions.filter((option) => option.searchTerms.some((term) => term.includes(query)))
+        : timezoneOptions
+    ).slice(0, 250)
+
+    if (baseMatches.some((option) => option.value === deadlineZone)) {
+      return baseMatches
+    }
+
+    const selected = timezoneOptions.find((option) => option.value === deadlineZone)
+    if (!selected) {
+      return baseMatches
+    }
+
+    return [selected, ...baseMatches.slice(0, 249)]
+  }, [deadlineZone, timezoneOptions, timezoneSearch])
+
+  const hasSelectedOption = timezoneOptions.some((option) => option.value === deadlineZone)
 
   return (
     <section className="rounded-xl border border-cyan-300/30 bg-panel/80 p-3 shadow-neon">
@@ -63,38 +92,98 @@ export function CommandPanel(props: CommandPanelProps) {
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <label className="grid gap-1 text-xs">
           <span>deadline date</span>
-          <input
-            className="rounded-md border border-cyan-400/35 bg-black/40 px-2 py-1 font-mono text-cyan-50"
-            type="date"
-            value={deadlineDate}
-            onChange={(event) => setDeadlineDate(event.target.value)}
-          />
+          <div className="flex gap-2">
+            <input
+              className="w-full rounded-md border border-cyan-400/35 bg-black/40 px-2 py-1 font-mono text-cyan-50"
+              type="date"
+              ref={dateInputRef}
+              value={deadlineDate}
+              onChange={(event) => setDeadlineDate(event.target.value)}
+            />
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1 text-[11px]"
+              onClick={() => {
+                const input = dateInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null
+                input?.showPicker?.()
+                input?.focus()
+              }}
+            >
+              pick
+            </button>
+          </div>
         </label>
 
         <label className="grid gap-1 text-xs">
           <span>deadline time</span>
-          <input
-            className="rounded-md border border-cyan-400/35 bg-black/40 px-2 py-1 font-mono text-cyan-50"
-            type="time"
-            value={deadlineTime}
-            onChange={(event) => setDeadlineTime(event.target.value)}
-          />
+          <div className="flex gap-2">
+            <input
+              className="w-full rounded-md border border-cyan-400/35 bg-black/40 px-2 py-1 font-mono text-cyan-50"
+              type="time"
+              ref={timeInputRef}
+              value={deadlineTime}
+              onChange={(event) => setDeadlineTime(event.target.value)}
+            />
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1 text-[11px]"
+              onClick={() => {
+                const input = timeInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null
+                input?.showPicker?.()
+                input?.focus()
+              }}
+            >
+              pick
+            </button>
+          </div>
         </label>
 
         <label className="grid gap-1 text-xs sm:col-span-2">
-          <span>timezone (iana)</span>
+          <span>timezone (iana, searchable)</span>
           <input
             className="rounded-md border border-cyan-400/35 bg-black/40 px-2 py-1 font-mono text-cyan-50"
-            value={deadlineZone}
-            list="tz-options"
-            onChange={(event) => setDeadlineZone(event.target.value)}
+            value={timezoneSearch}
+            onChange={(event) => setTimezoneSearch(event.target.value)}
+            placeholder="search timezone (example: prague, new_york, aoe)"
+            data-testid="timezone-search"
           />
-          <datalist id="tz-options">
-            {timezoneOptions.map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
-          <span className="text-[11px] text-cyan-100/60">now in selected zone: {nowZoneLabel}</span>
+
+          <div className="flex gap-2">
+            <select
+              className="w-full rounded-md border border-cyan-400/35 bg-black/40 px-2 py-1 font-mono text-cyan-50"
+              value={hasSelectedOption ? deadlineZone : '__custom__'}
+              onChange={(event) => {
+                const value = event.target.value
+                if (value === '__custom__') {
+                  return
+                }
+
+                setDeadlineZone(value)
+              }}
+              data-testid="timezone-select"
+            >
+              {!hasSelectedOption ? (
+                <option value="__custom__">{deadlineZone || 'custom timezone (invalid)'}</option>
+              ) : null}
+              {timezoneMatches.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              className="btn-neon px-2 py-1 text-[11px]"
+              onClick={() => setDeadlineZone(AOE_IANA_ZONE)}
+            >
+              aoe
+            </button>
+          </div>
+
+          <span className="text-[11px] text-cyan-100/60">
+            selected: {describeTimezone(deadlineZone)} · now in selected zone: {nowZoneLabel}
+          </span>
         </label>
       </div>
 
@@ -107,14 +196,14 @@ export function CommandPanel(props: CommandPanelProps) {
           <p>ambiguous dst time detected. choose instance:</p>
           <div className="mt-1 flex gap-2">
             <button
-              className="rounded border border-amber-300/40 px-2 py-1"
+              className="btn-ghost px-2 py-1"
               onClick={() => setAmbiguousPreference('earlier')}
               type="button"
             >
               earlier {ambiguousPreference === 'earlier' ? '✓' : ''}
             </button>
             <button
-              className="rounded border border-amber-300/40 px-2 py-1"
+              className="btn-ghost px-2 py-1"
               onClick={() => setAmbiguousPreference('later')}
               type="button"
             >
@@ -139,7 +228,7 @@ export function CommandPanel(props: CommandPanelProps) {
           {cityResults.map((city) => (
             <button
               key={`${city.name}-${city.zone}`}
-              className="rounded border border-cyan-300/35 bg-black/25 px-2 py-1 text-[11px]"
+              className="btn-ghost px-2 py-1 text-[11px]"
               onClick={() =>
                 setLocation({
                   lat: city.lat,
@@ -157,7 +246,7 @@ export function CommandPanel(props: CommandPanelProps) {
 
         <div className="flex flex-wrap gap-2">
           <button
-            className="rounded border border-cyan-300/35 bg-black/25 px-2 py-1"
+            className="btn-neon px-2 py-1"
             onClick={() => {
               navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -182,7 +271,7 @@ export function CommandPanel(props: CommandPanelProps) {
           </button>
 
           <button
-            className="rounded border border-cyan-300/35 bg-black/25 px-2 py-1"
+            className="btn-ghost px-2 py-1"
             onClick={() => setLocation(null)}
             type="button"
           >

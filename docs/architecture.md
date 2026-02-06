@@ -8,7 +8,7 @@
 - `src/features/civil/timezonePolygons.ts`: optional polygon dataset loader and civil-time zone matching.
 - `src/features/landmarks`: core dataset, crossing scheduler, alert generation.
 - `src/views/map2d`: canvas rendering of land, day/night, deadline lines.
-- `src/views/globe3d`: lazy-loaded R3F globe with lit hemisphere and solar meridian.
+- `src/views/globe3d`: lazy-loaded `react-globe.gl` scene with orbit controls, sun-driven lighting, and solar/terminator paths.
 - `src/ui`: panel, settings, toasts, counters.
 
 ## Data Flow

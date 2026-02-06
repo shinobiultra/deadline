@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { geoEquirectangular, geoGraticule10, geoPath } from 'd3-geo'
 import { feature } from 'topojson-client'
 import type { FeatureCollection, Geometry, LineString, Polygon } from 'geojson'
@@ -6,6 +6,7 @@ import { buildCivilBands } from '@/features/civil/civilBands'
 import { civilIntensityForZone, type TimezonePolygonFeature } from '@/features/civil/timezonePolygons'
 import type { LocationPoint } from '@/features/deadline/types'
 import { buildNightPolygon, buildTerminatorPolyline, solarDeadlineLongitude } from '@/features/solar/solarMath'
+import { clamp } from '@/lib/geo'
 import { useElementSize } from '@/lib/useElementSize'
 import type { Landmark } from '@/features/landmarks/types'
 
@@ -53,9 +54,20 @@ export function Map2DView(props: Map2DViewProps) {
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const dragRef = useRef<{
+    startX: number
+    startY: number
+    baseOffsetX: number
+    baseOffsetY: number
+  } | null>(null)
+
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const [world, setWorld] = useState<GeoFeatureCollection | null>(null)
   const [hoverReadout, setHoverReadout] = useState<string>('')
+  const [zoom, setZoom] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
+
   const size = useElementSize(container)
 
   useEffect(() => {
@@ -96,6 +108,23 @@ export function Map2DView(props: Map2DViewProps) {
     [civilGlowMinutes, targetMinutesOfDay, time]
   )
 
+  const buildProjection = useCallback(() => {
+    const projection = geoEquirectangular().fitExtent(
+      [
+        [14, 10],
+        [size.width - 14, size.height - 10]
+      ],
+      { type: 'Sphere' }
+    )
+
+    const baseScale = projection.scale()
+    const [tx, ty] = projection.translate()
+    projection.scale(baseScale * zoom)
+    projection.translate([tx + offset.x, ty + offset.y])
+
+    return projection
+  }, [offset.x, offset.y, size.height, size.width, zoom])
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !size.width || !size.height) {
@@ -122,14 +151,7 @@ export function Map2DView(props: Map2DViewProps) {
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, size.width, size.height)
 
-    const projection = geoEquirectangular().fitExtent(
-      [
-        [14, 10],
-        [size.width - 14, size.height - 10]
-      ],
-      { type: 'Sphere' }
-    )
-
+    const projection = buildProjection()
     const path = geoPath(projection, ctx)
 
     const graticule = geoGraticule10()
@@ -267,6 +289,7 @@ export function Map2DView(props: Map2DViewProps) {
       ctx.fillRect(xy[0] - 1, xy[1] - 1, 2, 2)
     }
   }, [
+    buildProjection,
     civilBands,
     civilGlowMinutes,
     landmarks,
@@ -287,30 +310,41 @@ export function Map2DView(props: Map2DViewProps) {
 
   return (
     <div
-      className="relative h-full min-h-[320px] rounded-xl border border-cyan-400/20 bg-black/20"
+      className={`relative h-full min-h-[320px] select-none rounded-xl border border-cyan-400/20 bg-black/20 ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       data-testid="map2d-view"
       ref={wrapperRef}
-      onMouseMove={(event) => {
-        const canvas = canvasRef.current
-        if (!canvas || !size.width || !size.height) {
+      onPointerDown={(event) => {
+        dragRef.current = {
+          startX: event.clientX,
+          startY: event.clientY,
+          baseOffsetX: offset.x,
+          baseOffsetY: offset.y
+        }
+        setDragging(true)
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        const projection = size.width && size.height ? buildProjection() : null
+
+        if (dragRef.current) {
+          const dx = event.clientX - dragRef.current.startX
+          const dy = event.clientY - dragRef.current.startY
+          setOffset({ x: dragRef.current.baseOffsetX + dx, y: dragRef.current.baseOffsetY + dy })
           return
         }
 
-        const projection = geoEquirectangular().fitExtent(
-          [
-            [14, 10],
-            [size.width - 14, size.height - 10]
-          ],
-          { type: 'Sphere' }
-        )
+        if (!projection || !projection.invert) {
+          return
+        }
+
+        const canvas = canvasRef.current
+        if (!canvas) {
+          return
+        }
 
         const rect = canvas.getBoundingClientRect()
         const x = event.clientX - rect.left
         const y = event.clientY - rect.top
-        if (!projection.invert) {
-          return
-        }
-
         const inverted = projection.invert([x, y])
         if (!inverted) {
           setHoverReadout('')
@@ -320,12 +354,52 @@ export function Map2DView(props: Map2DViewProps) {
         const [lon, lat] = inverted
         setHoverReadout(`lon ${lon.toFixed(1)} | lat ${lat.toFixed(1)} | solar line ${solarLongitude.toFixed(1)}°`)
       }}
+      onPointerUp={(event) => {
+        dragRef.current = null
+        setDragging(false)
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }}
+      onPointerCancel={(event) => {
+        dragRef.current = null
+        setDragging(false)
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }}
+      onWheel={(event) => {
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        const px = event.clientX - rect.left
+        const py = event.clientY - rect.top
+
+        const scaleDelta = Math.exp(-event.deltaY * 0.0015)
+        const nextZoom = clamp(zoom * scaleDelta, 1, 8)
+
+        if (Math.abs(nextZoom - zoom) < 1e-4) {
+          return
+        }
+
+        const ratio = nextZoom / zoom
+        setOffset((current) => ({
+          x: px - (px - current.x) * ratio,
+          y: py - (py - current.y) * ratio
+        }))
+        setZoom(nextZoom)
+      }}
     >
       <canvas className="h-full w-full rounded-xl" ref={canvasRef} />
       <div className="pointer-events-none absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] text-cyan-100/75">
-        <span>{hoverReadout || 'hover map for coordinates'}</span>
-        <span>projection: equirectangular</span>
+        <span>{hoverReadout || 'drag to pan, wheel to zoom, hover map for coordinates'}</span>
+        <span>{zoom.toFixed(2)}x</span>
       </div>
+      <button
+        type="button"
+        className="btn-ghost absolute right-2 top-2 px-2 py-1 text-[11px]"
+        onClick={() => {
+          setZoom(1)
+          setOffset({ x: 0, y: 0 })
+        }}
+      >
+        reset view
+      </button>
     </div>
   )
 }
