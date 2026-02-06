@@ -1,0 +1,139 @@
+const thresholdOptions = [1440, 360, 60, 15, 5, 1]
+
+type SettingsDrawerProps = {
+  useApparentSolar: boolean
+  setUseApparentSolar: (value: boolean) => void
+  useTimezonePolygons: boolean
+  setUseTimezonePolygons: (value: boolean) => void
+  timezonePolygonStatus: 'idle' | 'loading' | 'ready' | 'missing' | 'error'
+  civilGlowMinutes: number
+  setCivilGlowMinutes: (value: number) => void
+  alertThresholdMinutes: number[]
+  setAlertThresholds: (value: number[]) => void
+  enableCrossingAlerts: boolean
+  setEnableCrossingAlerts: (value: boolean) => void
+  enableBrowserNotifications: boolean
+  setEnableBrowserNotifications: (value: boolean) => void
+}
+
+export function SettingsDrawer(props: SettingsDrawerProps) {
+  const {
+    useApparentSolar,
+    setUseApparentSolar,
+    useTimezonePolygons,
+    setUseTimezonePolygons,
+    timezonePolygonStatus,
+    civilGlowMinutes,
+    setCivilGlowMinutes,
+    alertThresholdMinutes,
+    setAlertThresholds,
+    enableCrossingAlerts,
+    setEnableCrossingAlerts,
+    enableBrowserNotifications,
+    setEnableBrowserNotifications
+  } = props
+
+  const toggleThreshold = (value: number) => {
+    if (alertThresholdMinutes.includes(value)) {
+      setAlertThresholds(alertThresholdMinutes.filter((item) => item !== value))
+      return
+    }
+
+    setAlertThresholds([...alertThresholdMinutes, value].sort((a, b) => b - a))
+  }
+
+  return (
+    <details className="rounded-xl border border-cyan-300/20 bg-black/35 p-3 text-xs text-cyan-100/80">
+      <summary className="cursor-pointer select-none text-[10px] uppercase tracking-[0.18em] text-cyan-200/70">
+        settings
+      </summary>
+      <div className="mt-3 grid gap-3">
+        <label className="flex items-center justify-between gap-2">
+          <span>apparent solar (equation-of-time)</span>
+          <input
+            type="checkbox"
+            checked={useApparentSolar}
+            onChange={(event) => setUseApparentSolar(event.target.checked)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-2">
+          <span>accuracy mode (timezone polygons)</span>
+          <input
+            type="checkbox"
+            checked={useTimezonePolygons}
+            onChange={(event) => setUseTimezonePolygons(event.target.checked)}
+          />
+        </label>
+        {useTimezonePolygons ? (
+          <p className="text-[11px] text-cyan-100/70">
+            {timezonePolygonStatus === 'ready'
+              ? 'timezone polygons loaded'
+              : timezonePolygonStatus === 'loading'
+                ? 'loading timezone polygons...'
+                : timezonePolygonStatus === 'missing'
+                  ? 'dataset missing: add public/data/timezones/timezones.geojson'
+                  : timezonePolygonStatus === 'error'
+                    ? 'failed to load polygon dataset'
+                    : 'timezone polygons idle'}
+          </p>
+        ) : null}
+
+        <label className="grid gap-1">
+          <span>civil glow tolerance (minutes)</span>
+          <input
+            type="range"
+            min={1}
+            max={45}
+            value={civilGlowMinutes}
+            onChange={(event) => setCivilGlowMinutes(Number(event.target.value))}
+          />
+          <span className="font-mono text-cyan-100/70">{civilGlowMinutes}m</span>
+        </label>
+
+        <fieldset className="grid gap-1">
+          <legend>alert thresholds</legend>
+          <div className="flex flex-wrap gap-2">
+            {thresholdOptions.map((value) => (
+              <label key={value} className="flex items-center gap-1 rounded-md border border-cyan-300/25 px-2 py-1">
+                <input
+                  type="checkbox"
+                  checked={alertThresholdMinutes.includes(value)}
+                  onChange={() => toggleThreshold(value)}
+                />
+                <span>{value >= 60 ? `${value / 60}h` : `${value}m`}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <label className="flex items-center justify-between gap-2">
+          <span>landmark crossing alerts</span>
+          <input
+            type="checkbox"
+            checked={enableCrossingAlerts}
+            onChange={(event) => setEnableCrossingAlerts(event.target.checked)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-2">
+          <span>browser notifications (opt-in)</span>
+          <input
+            type="checkbox"
+            checked={enableBrowserNotifications}
+            onChange={async (event) => {
+              const shouldEnable = event.target.checked
+              if (shouldEnable && 'Notification' in window) {
+                const permission = await Notification.requestPermission()
+                setEnableBrowserNotifications(permission === 'granted')
+                return
+              }
+
+              setEnableBrowserNotifications(false)
+            }}
+          />
+        </label>
+      </div>
+    </details>
+  )
+}

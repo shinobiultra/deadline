@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'JetBrains Mono', 'IBM Plex Sans', ui-sans-serif, system-ui;
+  line-height: 1.4;
+  font-weight: 400;
+  color: #d9e8ff;
+  background: #05070d;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(1200px circle at 20% -10%, rgba(110, 231, 255, 0.15), transparent 60%),
+    radial-gradient(900px circle at 85% 120%, rgba(124, 255, 178, 0.08), transparent 55%),
+    #05070d;
+}
+
+button,
+input,
+select,
+summary {
+  color: inherit;
+  font: inherit;
+}
+
+.noise-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  opacity: 0.12;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.25) 0.6px, transparent 0.6px);
+  background-size: 3px 3px;
+  mix-blend-mode: soft-light;
+}
+
+.scanline-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  opacity: 0.08;
+  background-image: linear-gradient(transparent 50%, rgba(124, 255, 178, 0.08) 50%);
+  background-size: 100% 3px;
+}

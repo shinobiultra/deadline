@@ -1,0 +1,22 @@
+[
+  { "id": "greenwich", "name": "greenwich", "lat": 51.4769, "lon": 0.0, "tags": ["prime meridian"] },
+  { "id": "titanic", "name": "titanic site", "lat": 41.7325, "lon": -49.9469, "tags": ["historic"] },
+  { "id": "mariana", "name": "mariana trench", "lat": 11.35, "lon": 142.2, "tags": ["ocean"] },
+  { "id": "everest", "name": "mount everest", "lat": 27.9881, "lon": 86.925, "tags": ["mountain"] },
+  { "id": "nyc", "name": "new york", "lat": 40.7128, "lon": -74.006, "tags": ["city"] },
+  { "id": "la", "name": "los angeles", "lat": 34.0522, "lon": -118.2437, "tags": ["city"] },
+  { "id": "tokyo", "name": "tokyo", "lat": 35.6764, "lon": 139.65, "tags": ["city"] },
+  { "id": "london", "name": "london", "lat": 51.5072, "lon": -0.1276, "tags": ["city"] },
+  { "id": "sydney", "name": "sydney", "lat": -33.8688, "lon": 151.2093, "tags": ["city"] },
+  { "id": "lagos", "name": "lagos", "lat": 6.5244, "lon": 3.3792, "tags": ["city"] },
+  { "id": "reykjavik", "name": "reykjavik", "lat": 64.1466, "lon": -21.9426, "tags": ["city"] },
+  { "id": "anchorage", "name": "anchorage", "lat": 61.2181, "lon": -149.9003, "tags": ["city"] },
+  { "id": "cape_town", "name": "cape town", "lat": -33.9249, "lon": 18.4241, "tags": ["city"] },
+  { "id": "rio", "name": "rio de janeiro", "lat": -22.9068, "lon": -43.1729, "tags": ["city"] },
+  { "id": "buenos_aires", "name": "buenos aires", "lat": -34.6037, "lon": -58.3816, "tags": ["city"] },
+  { "id": "antarctica", "name": "south pole station", "lat": -90.0, "lon": 0.0, "tags": ["polar"] },
+  { "id": "north_pole", "name": "north pole", "lat": 90.0, "lon": 0.0, "tags": ["polar"] },
+  { "id": "honolulu", "name": "honolulu", "lat": 21.3069, "lon": -157.8583, "tags": ["city"] },
+  { "id": "dubai", "name": "dubai", "lat": 25.2048, "lon": 55.2708, "tags": ["city"] },
+  { "id": "singapore", "name": "singapore", "lat": 1.3521, "lon": 103.8198, "tags": ["city"] }
+]
