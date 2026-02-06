@@ -6,8 +6,13 @@
 - unit: `tests/unit/*`
 - property-based: `tests/property/*` (fast-check)
 - e2e: `tests/e2e/*` (Playwright, Chromium)
+  - includes map-first default-surface assertions (no cockpit layout regression)
+  - includes deadline drawer safe draft/apply flow + AoE coverage
+  - includes layers-panel toggles + detail-lens flow coverage
+  - includes 2d/detail cursor-anchored zoom assertions
+  - includes 3d tooltip fields (civil/solar/delta) + mode switching coverage
   - includes debug-layout assertion (`warnings: 0`)
-  - includes globe manual-rotate and `reset orbit` coverage
+  - includes long-horizon (`>24h`) unwind controls coverage
   - includes GH-pages subpath smoke (`tests/e2e/gh-pages.spec.ts` via dedicated config)
 - UI capture: `scripts/capture_ui.mjs` screenshots for manual visual review
   - canonical outputs: `docs/screens/*` (deterministic demo mode)

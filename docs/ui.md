@@ -1,69 +1,76 @@
-# UI Guide
+# UI Guide (Map-First v1)
 
-## Experience model
+## Experience Model
 
-- primary layout: `command deck` left, wide map stage right
-- secondary cards (`countdown`, `stats`, `distance`, `settings`) live under map stage
-- stage modes: `2d map`, `3d globe`, `detail zoom`
-- interaction style: lowercase labels, neon outlines, dark default, reduced-motion safe
+- default layout is full-screen map/globe (no permanent side panel, no permanent bottom cards)
+- only 4 controls are always visible:
+  - `deadline chip` (top-left)
+  - `2d|3d + snap + share` cluster (top-right)
+  - `layers` button (bottom-right)
+  - `countdown hud` (bottom-left)
+- all other controls are in drawers/popovers
+- opening line remains visible: `got a deadline? and wonder where on earth it literally is?`
 
-## Deadline workflow (what users should see)
+## Primary Surfaces
 
-0. choose active deadline slot (or create/duplicate one)
-1. set deadline date + time
-2. pick timezone (`local`, `utc`, `aoe`, searchable IANA)
-3. resolve UTC instant (live in tracker card)
-4. verify lines on map/globe (`now`, `deadline`, `scrub`)
-5. optional location for distance/remaining context
+### deadline chip
 
-The command panel shows both:
+- shows active slot summary + UTC/JST conversion + state pill (`synced|draft|locked`)
+- click opens deadline drawer
+- right-click opens quick actions (`new`, `dup`, `lock`, `share`)
 
-- `workflow`: step-by-step progress status
-- `deadline tracker`: input wall time, resolved UTC instant, target clock, deadline offset
-- `active deadline`: slot picker + lock + draft/apply/discard safety state
+### mode cluster
 
-## Controls
+- segmented: `2d`, `3d`
+- actions: `snap`, `share`
+- switching keeps timeline/layer state and uses stored 2d/globe focus context
 
-- date/time inputs have internal picker icon buttons and reserved input padding
-- no native checkbox styling; all layer toggles use switch pills
-- draft safety controls:
-  - `apply` commits draft edits to active deadline
-  - `discard` restores draft from active deadline
-  - `lock` prevents accidental updates to active slot
-- quick adjust chips: `-1d`, `-1h`, `-15m`, `+15m`, `+1h`, `+1d`, `now+24h`
-- debug mode: `?debug=1` or `Ctrl+Shift+D`
+### layers panel
 
-## Map stage behavior
+- base map: `deadLINE dark`, `osm light`, `osm dark`
+- overlays: `solar lines`, `civil timezones`, `terminator`, `landmarks`
+- detail lens: `auto|off|on`
+- effects: `off|subtle|spicy`
+- compact legend is available here (not always printed over map)
 
-- 2d map supports endless horizontal wrap
-- drag to pan, wheel to zoom, double-click zoom
-- `reset view` returns to baseline zoom/center with snap animation
-- detail view auto-exits back to deadLINE view when zoom drops below `2.2`
+### countdown hud
 
-## 3d behavior
+- compact single-line countdown (`T-...`)
+- opens info drawer on click
 
-- `react-globe.gl` orbit controls (drag rotate, wheel zoom)
-- manual orbit is sticky: user drag disables auto-orbit drift until `reset orbit`
-- sun-driven day/night lighting
-- visible solar `now` beam + deadline ghost path
-- hover/readout text explains timezone and target relation
+## Drawers
 
-## UX debugging tools
+### deadline drawer
 
-- overlap + hit-target detector (`data-debug-key`)
-- one-click capture: `screenshot.png` + `layout.json`
-- `npm run ui:capture` produces deterministic demo screenshots into `docs/screens/` (and mirrors to `artifacts/ui/`)
+- slot manager: switch/new/duplicate/lock/delete(+confirm phrase)
+- draft-based editor: date, time, timezone search/select, quick adjust chips
+- `apply` / `discard` shown only while dirty
+- location controls: use location, pick on map/globe, clear, city search
+- advanced section: apparent solar, timezone polygon mode, alert thresholds, notifications, reduced motion, dst ambiguity selector
+
+### info drawer
+
+- distance/remaining summary
+- collapsible stats section
+- upcoming crossings/event log
+- debug subsection when `?debug=1`
+
+## Visualization Notes
+
+- 2d: infinite wrap + cursor-anchored zoom
+- detail lens is not a top-level mode; controlled from layers
+- 3d includes:
+  - sun lighting + subsolar marker
+  - solar now/deadline paths
+  - soft terminator band
+  - hover tooltip with civil time, solar time, and delta-to-target minutes
 
 ## Screenshot Baseline
 
-- demo mode URL: `?demo=1&capture=1`
+- deterministic capture mode: `?demo=1&capture=1`
 - fixed demo deadline: `2026-02-05 00:00 AoE` (`2026-02-05 12:00 UTC`, `21:00 JST`)
 - frozen demo now: `2026-02-05T08:21:44Z`
-- view presets for capture:
+- capture presets:
   - `?demo=1&capture=1&view=2d`
   - `?demo=1&capture=1&view=3d`
   - `?demo=1&capture=1&view=detail`
-
-## Control Audit
-
-Detailed control-level justification is maintained in `docs/ui-controls.md`.

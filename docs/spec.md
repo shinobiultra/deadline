@@ -9,6 +9,8 @@ Source: user-provided implementation brief on February 6, 2026.
 ## 1. Goals
 
 - Parse timezone-safe deadlines and convert to UTC instant.
+- Support long-horizon deadlines (`>24h`) with a clear unwind/fast-forward visualization mode.
+- Keep a screenshot at the top of `README.md` so the project intent is obvious immediately.
 - Render day/night terminator + two deadline lines:
   - Civil: timezone-chunked.
   - Solar: continuous meridian.
@@ -17,11 +19,16 @@ Source: user-provided implementation brief on February 6, 2026.
 
 ## 2. UX Summary
 
-- Split view with `2d map` and `3d globe` toggle.
-- Command panel: date, time, timezone, location/city search.
-- Toggles: show timezones, solar layer, day/night, preview mode (`now` or `at deadline`).
-- Always-visible countdown + compact stats.
-- Optional alerts: time thresholds + landmark crossings.
+- stage header greeting requirement: `got a deadline? and wonder where on earth it literally is?`
+- Full-screen map-first shell (no permanent side panel, no permanent bottom cards).
+- Only 4 always-visible controls:
+  - deadline chip (top-left)
+  - `2d|3d` + `snap|share` cluster (top-right)
+  - layers button (bottom-right)
+  - countdown HUD (bottom-left)
+- Deadline editing/settings live inside dismissible drawers/popovers.
+- Detail map is a layers-driven lens (`auto|off|on`), not a top-level mode button.
+- Optional alerts remain: time thresholds + landmark crossings.
 
 ## 3. Core Definitions
 

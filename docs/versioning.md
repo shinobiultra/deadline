@@ -4,12 +4,12 @@
 
 - semantic versioning (`MAJOR.MINOR.PATCH`)
 - current line: `0.x` (fast iteration, minor can include breaking changes)
-- tag each release commit (`v0.3.1`, etc.)
+- tag each release commit (`v0.4.0`, etc.)
 
 ## Current release
 
-- `v0.3.1`
-- focus: deterministic demo/screenshot pipeline, clearer deadline workflow UX, and robust detail-map interactions under slow/failed tile loads
+- `v0.4.0`
+- focus: breaking map-first UI architecture (4 always-visible surfaces), drawer-based workflows, updated e2e/gh-pages gates
 
 ## Release checklist
 

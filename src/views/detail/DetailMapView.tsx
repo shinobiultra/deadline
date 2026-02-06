@@ -19,6 +19,8 @@ type DetailMapViewProps = {
   landmarks: Landmark[]
   onZoomedOutExit?: () => void
   captureMode?: boolean
+  styleVariant?: 'osm-light' | 'osm-dark'
+  minimalUi?: boolean
 }
 
 type DetailLineFeatureProps = {
@@ -32,36 +34,47 @@ type DetailPointProps = {
   label: string
 }
 
-const OPEN_MAP_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  name: 'deadLINE-open-map',
-  sources: {
-    openstreetmap: {
-      type: 'raster',
-      tiles: [
-        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
-      ],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors'
-    }
-  },
-  layers: [
-    {
-      id: 'openstreetmap',
-      type: 'raster',
-      source: 'openstreetmap',
-      paint: {
-        'raster-opacity': 0.96,
-        'raster-contrast': 0.36,
-        'raster-saturation': -0.78,
-        'raster-hue-rotate': 192,
-        'raster-brightness-min': 0.04,
-        'raster-brightness-max': 0.42
+function buildOpenMapStyle(variant: 'osm-light' | 'osm-dark'): maplibregl.StyleSpecification {
+  const dark = variant === 'osm-dark'
+  return {
+    version: 8,
+    name: `deadLINE-open-map-${variant}`,
+    sources: {
+      openstreetmap: {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors'
       }
-    }
-  ]
+    },
+    layers: [
+      {
+        id: 'openstreetmap',
+        type: 'raster',
+        source: 'openstreetmap',
+        paint: dark
+          ? {
+              'raster-opacity': 0.94,
+              'raster-contrast': 0.33,
+              'raster-saturation': -0.72,
+              'raster-hue-rotate': 191,
+              'raster-brightness-min': 0.04,
+              'raster-brightness-max': 0.44
+            }
+          : {
+              'raster-opacity': 0.98,
+              'raster-contrast': 0.06,
+              'raster-saturation': 0.05,
+              'raster-brightness-min': 0.2,
+              'raster-brightness-max': 0.92
+            }
+      }
+    ]
+  }
 }
 
 const CAPTURE_MAP_STYLE: maplibregl.StyleSpecification = {
@@ -185,7 +198,9 @@ export function DetailMapView(props: DetailMapViewProps) {
     showLandmarks,
     landmarks,
     onZoomedOutExit,
-    captureMode = false
+    captureMode = false,
+    styleVariant = 'osm-dark',
+    minimalUi = false
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -253,7 +268,7 @@ export function DetailMapView(props: DetailMapViewProps) {
 
     const map = new maplibregl.Map({
       container,
-      style: captureMode ? CAPTURE_MAP_STYLE : OPEN_MAP_STYLE,
+      style: captureMode ? CAPTURE_MAP_STYLE : buildOpenMapStyle(styleVariant),
       center: initialCenterRef.current,
       zoom: initialHasLocationRef.current ? 9.4 : 2.6,
       pitch: initialModeRef.current === '3d' ? 60 : 0,
@@ -271,7 +286,9 @@ export function DetailMapView(props: DetailMapViewProps) {
       }
     }, 7000)
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'top-right')
+    if (!minimalUi) {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'top-right')
+    }
     map.scrollZoom.disable()
     const initializeStyle = () => {
       if (styleInitialized) {
@@ -478,8 +495,8 @@ export function DetailMapView(props: DetailMapViewProps) {
       const px = event.clientX - rect.left
       const py = event.clientY - rect.top
       const currentZoom = map.getZoom()
-      const scaleDelta = Math.exp(-event.deltaY * 0.0015)
-      const nextZoom = clamp(currentZoom * scaleDelta, 1, 19)
+      const zoomDelta = -event.deltaY * 0.0024
+      const nextZoom = clamp(currentZoom + zoomDelta, 1, 19)
       if (Math.abs(nextZoom - currentZoom) < 1e-4) {
         return
       }
@@ -507,7 +524,7 @@ export function DetailMapView(props: DetailMapViewProps) {
       mapRef.current = null
       setLoaded(false)
     }
-  }, [captureMode, onZoomedOutExit])
+  }, [captureMode, minimalUi, onZoomedOutExit, styleVariant])
 
   useEffect(() => {
     const map = mapRef.current
@@ -574,52 +591,63 @@ export function DetailMapView(props: DetailMapViewProps) {
       data-testid="detail-map-view"
       data-loaded={loaded ? '1' : '0'}
     >
-      <div className="border-cyan-300/35 text-cyan-100 absolute left-2 top-2 z-20 grid gap-2 rounded-md border bg-black/70 px-2 py-2 text-[11px] shadow-neon">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-ghost px-2 py-1"
-            onClick={() => setFollowLine((value) => !value)}
-          >
-            follow line: {followLine ? 'on' : 'off'}
-          </button>
-          <button
-            type="button"
-            className="btn-ghost px-2 py-1"
-            onClick={() => {
-              mapRef.current?.easeTo({
-                center: [location?.lon ?? solarNowLongitude, location?.lat ?? 0],
-                zoom: location ? 14.5 : 6.5,
-                pitch: mode === '3d' ? 64 : 48,
-                duration: 800
-              })
-            }}
-          >
-            zoom to line
-          </button>
-          <button
-            type="button"
-            className="btn-neon px-2 py-1"
-            onClick={() => {
-              mapRef.current?.easeTo({
-                zoom: 17,
-                pitch: mode === '3d' ? 68 : 52,
-                duration: 850
-              })
-            }}
-          >
-            building close-up
-          </button>
+      {minimalUi ? (
+        <div className="border-cyan-300/35 text-cyan-100 pointer-events-none absolute left-2 top-2 z-20 rounded-md border bg-black/60 px-2 py-1 text-[11px] shadow-neon">
+          detail lens {styleVariant.replace('-', ' ')} · zoom {zoomLevel.toFixed(2)}
+          <br />
+          <span data-testid="detail-hover-readout">
+            {hoverReadout || 'hover for civil timezone + target context'}
+          </span>
+          {styleError ? <span className="text-rose-200"> · tiles warning</span> : null}
         </div>
+      ) : (
+        <div className="border-cyan-300/35 text-cyan-100 absolute left-2 top-2 z-20 grid gap-2 rounded-md border bg-black/70 px-2 py-2 text-[11px] shadow-neon">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1"
+              onClick={() => setFollowLine((value) => !value)}
+            >
+              follow line: {followLine ? 'on' : 'off'}
+            </button>
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1"
+              onClick={() => {
+                mapRef.current?.easeTo({
+                  center: [location?.lon ?? solarNowLongitude, location?.lat ?? 0],
+                  zoom: location ? 14.5 : 6.5,
+                  pitch: mode === '3d' ? 64 : 48,
+                  duration: 800
+                })
+              }}
+            >
+              zoom to line
+            </button>
+            <button
+              type="button"
+              className="btn-neon px-2 py-1"
+              onClick={() => {
+                mapRef.current?.easeTo({
+                  zoom: 17,
+                  pitch: mode === '3d' ? 68 : 52,
+                  duration: 850
+                })
+              }}
+            >
+              building close-up
+            </button>
+          </div>
 
-        <p className="text-cyan-50 font-mono">
-          style: night ops raster · zoom {zoomLevel.toFixed(2)} · {mode === '3d' ? 'pitched' : 'flat'}
-        </p>
-        <p className="text-cyan-100/78" data-testid="detail-hover-readout">
-          {hoverReadout || 'hover for civil timezone + target context · zoom out below 2.2 to return'}
-        </p>
-        {styleError ? <p className="text-rose-200">detail tiles warning: {styleError}</p> : null}
-      </div>
+          <p className="text-cyan-50 font-mono">
+            style: night ops raster · zoom {zoomLevel.toFixed(2)} · {mode === '3d' ? 'pitched' : 'flat'}
+          </p>
+          <p className="text-cyan-100/78" data-testid="detail-hover-readout">
+            {hoverReadout || 'hover for civil timezone + target context · zoom out below 2.2 to return'}
+          </p>
+          {styleError ? <p className="text-rose-200">detail tiles warning: {styleError}</p> : null}
+        </div>
+      )}
 
       <div ref={containerRef} className="h-full w-full rounded-xl" />
       {!loaded ? (

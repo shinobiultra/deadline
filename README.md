@@ -1,6 +1,11 @@
-# deadLINE (v0.3.1)
+# deadLINE (v0.4.0)
+
+![deadLINE demo screenshot](docs/screens/demo-2d.png)
 
 Minimal OSS web app that visualizes a deadline as moving civil/solar lines over Earth (2D map + 3D globe). Vibe coded on [5.3-Codex release day](https://openai.com/index/introducing-gpt-5-3-codex/).
+
+Core greeting requirement in UI copy: `got a deadline? and wonder where on earth it literally is?`
+README requirement: keep a current demo screenshot at the very top so project purpose is obvious in first glance.
 
 ## stack
 
@@ -73,19 +78,17 @@ http://localhost:5173/?demo=1&view=detail
 
 ## manual smoke checklist
 
-1. Enter a deadline date/time/timezone and confirm countdown updates.
-2. Set timezone to `Anywhere on Earth (AoE, UTC-12)` and confirm it is accepted.
-3. Toggle between `2d map` and `3d globe`.
-4. Toggle day/night, solar line, civil zones, landmarks.
-5. Set location (city chip or geolocation) and confirm distance box updates.
-6. Open `settings`, enable optional notifications, and check toast behavior.
-7. Switch preview mode between `now`, `deadline`, and `scrub`.
-8. On 2d map: drag horizontally for continuous wrap, wheel zoom, then `reset view` (must snap back).
-9. Use `snap` in stage header and verify PNG download.
-10. In `3d globe`, drag to rotate, wheel to zoom, then use `reset orbit` to re-center.
-11. Toggle `detail zoom` and verify high-detail open-map raster mode (building-level zoom + line overlays); zooming out below world-level should auto-return to the default deadLINE view.
-12. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
-13. Validate draft/apply safety: edit date/time, confirm draft state, apply/discard, switch slot, and reload persistence.
+1. Confirm default view is map-first: only `deadline chip`, `2d/3d + snap/share`, `layers`, and `countdown hud` are always visible.
+2. Open deadline drawer from the chip, edit date/time/timezone, and verify map only updates after `apply`.
+3. Set timezone to `Anywhere on Earth (AoE, UTC-12)` and confirm it is accepted.
+4. Toggle between `2d` and `3d`; verify map/globe remain interactive.
+5. Open layers panel and toggle overlays (`solar lines`, `civil timezones`, `terminator`, `landmarks`).
+6. Set detail lens to `on`, then `off`, and verify smooth transition in 2d view.
+7. Set location with geolocation or map-pick and confirm distance readout in info drawer.
+8. If deadline is >24h away, use `unwind` + speed controls and verify cycle countdown updates.
+9. Use `snap` to export a PNG and `share` to copy encoded URL state.
+10. In 3d, hover globe and verify tooltip includes civil time, solar time, and delta-to-target.
+11. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
 
 ## optional timezone polygon accuracy mode
 

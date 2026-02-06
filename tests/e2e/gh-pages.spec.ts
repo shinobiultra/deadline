@@ -43,7 +43,7 @@ test('gh pages build creates webgl globe context and visible line overlays', asy
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   await page.goto('/')
-  await page.getByRole('button', { name: '3d globe' }).click()
+  await page.getByRole('button', { name: '3d', exact: true }).click()
 
   const globe = page.getByTestId('globe3d-view')
   await expect(globe).toBeVisible()
@@ -61,6 +61,7 @@ test('gh pages build creates webgl globe context and visible line overlays', asy
     })
 
   expect(hasWebglContext).toBe(true)
-  await expect(page.getByText(/solar now/i).first()).toBeVisible()
+  const hasOverlayPath = await globe.locator('svg path').count()
+  expect(hasOverlayPath).toBeGreaterThan(0)
   expect(pageErrors).toEqual([])
 })

@@ -1,7 +1,7 @@
 # Status
 
-- Version: `0.3.1`.
-- Scope: v1 core + UX hardening + safe multi-deadline workflow + GH-pages rendering hardening + deterministic demo/screens pipeline.
+- Version: `0.4.0`.
+- Scope: map-first v1 UX refactor (breaking), drawer-based workflows, layers panel controls, 3D tooltip/terminator band, and refreshed CI/e2e/gh-pages coverage.
 - Verification gates:
   - `npm run format:check`
   - `npm run lint`
@@ -14,10 +14,9 @@
   - `npm run ui:capture`
 - AoE: supported as `Anywhere on Earth (AoE, UTC-12)` mapped to `Etc/GMT+12`.
 - 2D map: infinite horizontal wrap, zoom/pan/reset, now+deadline visualization.
-- 3D globe: `react-globe.gl` with reliable manual orbit interaction, reset orbit control, and visible solar/terminator paths.
-- Detail mode: MapLibre raster open-map style with zoom-out auto-return to deadLINE view.
-- Detail mode robustness: hover/zoom logic initializes without waiting for full remote tile completion.
-- Layout: command deck left, wide map stage right, utility cards around map stage (below map).
+- 3D globe: `react-globe.gl` with hover civil/solar/delta tooltip, cursor-oriented dolly zoom, and visible solar/terminator paths.
+- Detail lens: MapLibre raster lens controlled from layers (`auto|off|on`) with minimal overlay UI.
+- Layout: full-screen map-first shell with only deadline chip, mode cluster, layers button, and countdown HUD always visible.
 - Deadline safety: slot manager + draft/apply/discard + slot lock to prevent accidental overwrites.
 - Debug tooling: overlap detector + screenshot/layout export.
 - GH-pages safety: base-path aware build + runtime asset probes + CI subpath smoke tests.

@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.4.0 - 2026-02-06
+
+- breaking UI refactor to map-first architecture:
+  - removed permanent left command panel and permanent bottom card row
+  - default screen is full map with only 4 always-visible surfaces:
+    - deadline chip (top-left)
+    - 2d/3d + snap/share cluster (top-right)
+    - layers button/panel (bottom-right)
+    - countdown HUD (bottom-left)
+- moved all editing and advanced controls into dismissible drawers/popovers:
+  - deadline drawer with slot management + safe draft/apply flow
+  - info drawer with distance/stats/event log/debug
+  - layers panel for basemap, overlays, detail lens, and effects tier
+- replaced top-bar detail mode with layers-driven detail lens (`auto|off|on`)
+- improved 3d utility features:
+  - hover tooltip now shows civil time, solar time, and delta-to-target
+  - added soft terminator band overlay and subsolar marker retained
+- strengthened UI automation for the new architecture:
+  - rebuilt e2e suite around map-first controls and drawer workflows
+  - kept GH-pages subpath smoke tests green after UI rewrite
+- refreshed deterministic screenshots in `docs/screens/*` via `?demo=1&capture=1`
+
+## 0.3.2 - 2026-02-06
+
+- stabilized CI/UI automation:
+  - fixed flaky `detail zoom` / mode-switch e2e interactions with resilient click handling
+  - expanded interaction harness to exercise repeated mode/layer/button combinations
+  - covered long-horizon unwind controls (`>24h` deadlines) in e2e
+- added long-horizon deadline `unwind` mode:
+  - start/stop timeline fast-forward with speed presets (`x120`, `x720`, `x3600`)
+  - live cycle estimate for day/night rotations left before deadline
+  - simulated UTC preview while unwinding
+- improved 3D interaction robustness:
+  - wheel capture now prevents page-scroll before globe readiness checks
+  - top mode toggles (`2d map`, `3d globe`) always exit detail mode first
+- synced docs + captures:
+  - requirement copy for stage greeting documented and shown in UI
+  - deterministic `?demo=1` screenshots refreshed in `docs/screens/*`
+
 ## 0.3.1 - 2026-02-06
 
 - added deterministic demo mode (`?demo=1`) for docs/screens and visual tests:

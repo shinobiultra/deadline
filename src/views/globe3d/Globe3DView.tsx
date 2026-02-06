@@ -12,6 +12,7 @@ import {
   sunDirectionEcef
 } from '@/features/solar/solarMath'
 import { assetUrl } from '@/lib/assets'
+import { clamp, wrap180 } from '@/lib/geo'
 import { useElementSize } from '@/lib/useElementSize'
 
 type Globe3DViewProps = {
@@ -30,6 +31,10 @@ type Globe3DViewProps = {
   captureMode?: boolean
   location?: LocationPoint | null
   landmarks: Array<{ id: string; name: string; lat: number; lon: number }>
+  initialViewState?: { lat: number; lng: number; altitude: number } | null
+  onViewStateChange?: (view: { lat: number; lng: number; altitude: number }) => void
+  minimalHud?: boolean
+  onPickLocation?: (location: LocationPoint) => void
 }
 
 type PathDatum = {
@@ -72,6 +77,17 @@ type LabelDatum = {
 type ScreenPathState = {
   now: string
   deadline: string | null
+  terminator: string
+}
+
+type HoverTooltipState = {
+  x: number
+  y: number
+  civilTime: string
+  solarTime: string
+  deltaToTargetMinutes: number
+  lon: number
+  lat: number
 }
 
 type InteractiveGlobeMethods = GlobeMethods & {
@@ -145,16 +161,25 @@ export default function Globe3DView({
   reducedMotion,
   captureMode = false,
   location,
-  landmarks
+  landmarks,
+  initialViewState,
+  onViewStateChange,
+  minimalHud = false,
+  onPickLocation
 }: Globe3DViewProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const globeRef = useRef<GlobeMethods | undefined>(undefined)
   const [countries, setCountries] = useState<Array<Feature<Geometry>>>([])
   const [hoverReadout, setHoverReadout] = useState('')
-  const [screenPaths, setScreenPaths] = useState<ScreenPathState>({ now: '', deadline: null })
+  const [screenPaths, setScreenPaths] = useState<ScreenPathState>({
+    now: '',
+    deadline: null,
+    terminator: ''
+  })
   const [globeReady, setGlobeReady] = useState(false)
   const [manualOrbitSeen, setManualOrbitSeen] = useState(false)
+  const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState | null>(null)
   const size = useElementSize(container)
   const raycasterRef = useRef(new Raycaster())
   const mouseRef = useRef(new Vector2())
@@ -424,6 +449,27 @@ export default function Globe3DView({
   }, [globeReady, lightingSampleTime, showDayNight, useApparentSolar])
 
   useEffect(() => {
+    const globe = globeRef.current as InteractiveGlobeMethods | undefined
+    if (!globeReady || !globe || !onViewStateChange) {
+      return
+    }
+
+    let rafId = 0
+    let lastPush = 0
+    const tick = (frameNow: number) => {
+      if (frameNow - lastPush >= 180) {
+        lastPush = frameNow
+        const pov = globe.pointOfView()
+        onViewStateChange(pov)
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [globeReady, onViewStateChange])
+
+  useEffect(() => {
     const globe = globeRef.current as
       | (GlobeMethods & {
           getScreenCoords?: (lat: number, lng: number, altitude?: number) => { x: number; y: number } | null
@@ -431,14 +477,14 @@ export default function Globe3DView({
       | undefined
 
     if (!globeReady || !showSolarTime || !globe || !globe.getScreenCoords) {
-      setScreenPaths({ now: '', deadline: null })
+      setScreenPaths({ now: '', deadline: null, terminator: '' })
       return
     }
 
-    const buildPath = (longitude: number) => {
+    const buildPath = (pointsSource: Array<{ lat: number; lng: number }>) => {
       const points: Array<[number, number]> = []
-      for (let lat = -86; lat <= 86; lat += 3) {
-        const screen = globe.getScreenCoords?.(lat, longitude, 0.14)
+      for (const point of pointsSource) {
+        const screen = globe.getScreenCoords?.(point.lat, point.lng, 0.14)
         if (!screen || !Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
           continue
         }
@@ -460,15 +506,37 @@ export default function Globe3DView({
     let lastCommit = 0
 
     const updatePaths = () => {
-      const nowPath = buildPath(nowSolarLongitudeRef.current)
+      const nowPoints: Array<{ lat: number; lng: number }> = []
+      for (let lat = -86; lat <= 86; lat += 3) {
+        nowPoints.push({ lat, lng: nowSolarLongitudeRef.current })
+      }
+      const nowPath = buildPath(nowPoints)
       const deadlineLon = deadlineSolarLongitudeRef.current
-      const deadlinePath = deadlineLon === null ? null : buildPath(deadlineLon)
+      const deadlinePath =
+        deadlineLon === null
+          ? null
+          : buildPath(
+              Array.from({ length: 58 }, (_, index) => ({
+                lat: -86 + index * 3,
+                lng: deadlineLon
+              }))
+            )
+      const terminatorPath = buildPath(
+        buildTerminatorPolyline(terminatorSampleTime, useApparentSolar).map((point) => ({
+          lat: point.lat,
+          lng: point.lon
+        }))
+      )
       setScreenPaths((previous) => {
-        if (previous.now === nowPath && previous.deadline === deadlinePath) {
+        if (
+          previous.now === nowPath &&
+          previous.deadline === deadlinePath &&
+          previous.terminator === terminatorPath
+        ) {
           return previous
         }
 
-        return { now: nowPath, deadline: deadlinePath }
+        return { now: nowPath, deadline: deadlinePath, terminator: terminatorPath }
       })
     }
 
@@ -485,7 +553,66 @@ export default function Globe3DView({
     rafId = requestAnimationFrame(tick)
 
     return () => cancelAnimationFrame(rafId)
-  }, [globeReady, reducedMotion, showSolarTime, size.height, size.width])
+  }, [
+    globeReady,
+    reducedMotion,
+    showSolarTime,
+    size.height,
+    size.width,
+    terminatorSampleTime,
+    useApparentSolar
+  ])
+
+  const updateHoverTooltip = (clientX: number, clientY: number) => {
+    const globe = globeRef.current as InteractiveGlobeMethods | undefined
+    if (!globeReady || !globe) {
+      setHoverTooltip(null)
+      return
+    }
+
+    const renderer = globe.renderer?.()
+    const camera = globe.camera?.()
+    const scene = globe.scene?.()
+    if (!renderer || !camera || !scene) {
+      setHoverTooltip(null)
+      return
+    }
+
+    const rect = renderer.domElement.getBoundingClientRect()
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1
+    const ny = -((clientY - rect.top) / rect.height) * 2 + 1
+    mouseRef.current.set(nx, ny)
+    raycasterRef.current.setFromCamera(mouseRef.current, camera as never)
+    const intersects = raycasterRef.current.intersectObjects(scene.children as never, true)
+    const hit = intersects.find((entry) => entry.point)
+    const geoHit = hit?.point && globe.toGeoCoords ? globe.toGeoCoords(hit.point) : null
+    if (!geoHit) {
+      setHoverTooltip(null)
+      return
+    }
+
+    const utcMinutes =
+      displayTime.getUTCHours() * 60 +
+      displayTime.getUTCMinutes() +
+      displayTime.getUTCSeconds() / 60 +
+      displayTime.getUTCMilliseconds() / 60_000
+    const lon = wrap180(geoHit.lng)
+    const lat = clamp(geoHit.lat, -90, 90)
+    const offsetHours = clamp(Math.round(lon / 15), -12, 14)
+    const civilMinutes = utcMinutes + offsetHours * 60
+    const solarMinutes = utcMinutes + lon * 4
+    const deltaMinutes = signedCircularMinuteDelta(targetMinutesOfDay, solarMinutes)
+
+    setHoverTooltip({
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+      civilTime: formatClock(civilMinutes),
+      solarTime: formatClock(solarMinutes),
+      deltaToTargetMinutes: Math.round(deltaMinutes),
+      lon,
+      lat
+    })
+  }
 
   return (
     <div
@@ -499,14 +626,17 @@ export default function Globe3DView({
           setManualOrbitSeen(true)
         }
       }}
+      onPointerMoveCapture={(event) => updateHoverTooltip(event.clientX, event.clientY)}
+      onPointerLeave={() => setHoverTooltip(null)}
       onWheelCapture={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+
         const globe = globeRef.current as InteractiveGlobeMethods | undefined
         if (!globeReady || !globe) {
           return
         }
 
-        event.preventDefault()
-        event.stopPropagation()
         setManualOrbitSeen(true)
 
         const renderer = globe.renderer?.()
@@ -683,16 +813,46 @@ export default function Globe3DView({
               `probe ${coords.lat.toFixed(1)}°, ${coords.lng.toFixed(1)}° · UTC${offsetHours >= 0 ? '+' : ''}${offsetHours} · local ${localClock} · target ${targetClockLabel} (${delta >= 0 ? '+' : ''}${Math.round(delta)}m)`
             )
             globeRef.current?.pointOfView({ lat: coords.lat, lng: coords.lng, altitude: 1.58 }, 680)
+            if (onPickLocation) {
+              onPickLocation({
+                lat: coords.lat,
+                lon: coords.lng,
+                label: `picked ${coords.lat.toFixed(3)}, ${coords.lng.toFixed(3)}`
+              })
+            }
           }}
           onGlobeReady={() => {
             setGlobeReady(true)
-            globeRef.current?.pointOfView({ lat: 18, lng: nowSolarLongitude - 18, altitude: 2.1 }, 0)
+            globeRef.current?.pointOfView(
+              initialViewState ?? { lat: 18, lng: nowSolarLongitude - 18, altitude: 2.1 },
+              0
+            )
           }}
         />
       ) : null}
 
       {showSolarTime ? (
         <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full">
+          {screenPaths.terminator && showDayNight ? (
+            <path
+              d={screenPaths.terminator}
+              fill="none"
+              stroke="rgba(110, 231, 255, 0.18)"
+              strokeWidth={22}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
+          {screenPaths.terminator && showDayNight ? (
+            <path
+              d={screenPaths.terminator}
+              fill="none"
+              stroke="rgba(110, 231, 255, 0.44)"
+              strokeWidth={6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
           {screenPaths.now ? (
             <path
               d={screenPaths.now}
@@ -729,25 +889,46 @@ export default function Globe3DView({
         </svg>
       ) : null}
 
-      <button
-        type="button"
-        className="btn-ghost absolute right-2 top-2 z-20 px-2 py-1 text-[11px]"
-        onClick={() => {
-          setManualOrbitSeen(false)
-          globeRef.current?.pointOfView({ lat: 18, lng: nowSolarLongitude - 18, altitude: 2.1 }, 620)
-        }}
-      >
-        reset orbit
-      </button>
+      {!minimalHud ? (
+        <button
+          type="button"
+          className="btn-ghost absolute right-2 top-2 z-20 px-2 py-1 text-[11px]"
+          onClick={() => {
+            setManualOrbitSeen(false)
+            globeRef.current?.pointOfView({ lat: 18, lng: nowSolarLongitude - 18, altitude: 2.1 }, 620)
+          }}
+        >
+          reset orbit
+        </button>
+      ) : null}
 
-      <div className="border-cyan-300/35 bg-black/56 text-cyan-100 pointer-events-none absolute left-2 top-2 rounded-md border px-2 py-1 text-[11px]">
-        target {targetClockLabel} in {deadlineZoneLabel} ({formatUtcOffset(deadlineOffsetMinutes)})
-        <br />
-        solar now {nowSolarLongitude.toFixed(1)}°
-        {deadlineSolarLongitude !== null ? ` · at deadline ${deadlineSolarLongitude.toFixed(1)}°` : ''}
-        <br />
-        mint beam: now · amber dash: deadline
-      </div>
+      {!minimalHud ? (
+        <div className="border-cyan-300/35 bg-black/56 text-cyan-100 pointer-events-none absolute left-2 top-2 rounded-md border px-2 py-1 text-[11px]">
+          target {targetClockLabel} in {deadlineZoneLabel} ({formatUtcOffset(deadlineOffsetMinutes)})
+          <br />
+          solar now {nowSolarLongitude.toFixed(1)}°
+          {deadlineSolarLongitude !== null ? ` · at deadline ${deadlineSolarLongitude.toFixed(1)}°` : ''}
+          <br />
+          mint beam: now · amber dash: deadline
+        </div>
+      ) : null}
+
+      {hoverTooltip ? (
+        <div
+          className="border-cyan-300/45 text-cyan-50 pointer-events-none absolute z-20 rounded-md border bg-black/75 px-2 py-1 text-[11px] shadow-neon"
+          data-testid="globe-hover-tooltip"
+          style={{
+            left: Math.max(8, Math.min(size.width - 230, hoverTooltip.x + 14)),
+            top: Math.max(8, Math.min(size.height - 88, hoverTooltip.y + 10))
+          }}
+        >
+          civil: {hoverTooltip.civilTime} · solar: {hoverTooltip.solarTime}
+          <br />Δ target: {hoverTooltip.deltaToTargetMinutes >= 0 ? '+' : ''}
+          {hoverTooltip.deltaToTargetMinutes}m
+          <br />
+          {hoverTooltip.lat.toFixed(1)}°, {hoverTooltip.lon.toFixed(1)}°
+        </div>
+      ) : null}
 
       <div className="text-cyan-100/78 pointer-events-none absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px]">
         <span>{hoverReadout || 'drag to rotate · scroll to zoom · auto orbit enabled'}</span>

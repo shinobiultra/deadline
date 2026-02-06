@@ -15,140 +15,115 @@ function extractLonLat(readout: string) {
   return { lon, lat }
 }
 
+function circularLonDelta(a: number, b: number) {
+  return Math.abs(((((a - b + 540) % 360) + 360) % 360) - 180)
+}
+
 async function waitForLonLat(locator: Locator, page: Page) {
-  for (let i = 0; i < 16; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     const text = await locator.innerText()
     const parsed = extractLonLat(text)
     if (parsed) {
       return parsed
     }
-
-    await page.waitForTimeout(120)
+    await page.waitForTimeout(100)
   }
-
   return null
 }
 
-test('deadline controls, wrapped map interactions, detail zoom and snapshot stay stable', async ({
-  page
-}) => {
+async function openDeadlineDrawer(page: Page) {
+  await page.getByTestId('deadline-chip').click()
+  await expect(page.getByTestId('deadline-drawer')).toBeVisible()
+}
+
+test('map-first default layout shows only minimal always-visible surfaces', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+
+  await expect(page.getByTestId('map2d-view')).toBeVisible()
+  await expect(page.getByTestId('deadline-chip')).toBeVisible()
+  await expect(page.getByTestId('countdown-hud')).toBeVisible()
+  await expect(page.getByTestId('layers-button')).toBeVisible()
+  await expect(page.getByRole('button', { name: '2d', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '3d', exact: true })).toBeVisible()
+
+  await expect(page.getByText(/^workflow$/i)).toHaveCount(0)
+  await expect(page.getByTestId('info-drawer')).toHaveCount(0)
+  await expect(page.getByTestId('deadline-drawer')).toHaveCount(0)
+})
+
+test('deadline drawer uses safe draft/apply flow and supports AoE + unwind controls', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/')
+
+  await openDeadlineDrawer(page)
+  await page.locator('input[type="date"]').first().fill('2026-02-05')
+  await page.locator('input[type="time"]').first().fill('21:00')
+  await page.getByRole('button', { name: 'aoe' }).click()
+  await page.getByRole('button', { name: 'now+24h' }).click()
+  await page.getByRole('button', { name: '+1d' }).click()
+
+  await expect(page.getByRole('button', { name: /apply draft deadline|apply/i })).toBeVisible()
+  await page.getByRole('button', { name: /apply draft deadline|apply/i }).click()
+  await page.getByRole('button', { name: /close deadline drawer/i }).click()
+
+  await expect(page.getByTestId('unwind-controls')).toBeVisible()
+  await page.getByTestId('unwind-toggle').click()
+  await expect(page.getByText(/unwind active/i)).toBeVisible()
+  await page.getByRole('button', { name: 'x3600' }).click()
+  await page.waitForTimeout(200)
+  await page.getByTestId('unwind-toggle').click()
+
+  const chipText = await page.getByTestId('deadline-chip').innerText()
+  expect(chipText.toLowerCase()).toContain('aoe')
+})
+
+test('layers panel drives overlays + detail lens and keeps map interactive', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.addInitScript(() => window.localStorage.clear())
-
   await page.goto('/')
 
-  await expect(page.getByTestId('countdown-card')).toBeVisible()
   const map2d = page.getByTestId('map2d-view')
   await expect(map2d).toBeVisible()
 
-  await page.locator('input[type="date"]').first().fill('2026-12-31')
-  await page.locator('input[type="time"]').first().fill('22:45')
+  await page.getByTestId('layers-button').click()
+  const layersPanel = page.getByTestId('layers-panel')
+  await expect(layersPanel).toBeVisible()
 
-  await page.getByTestId('timezone-search').fill('aoe')
-  await page.getByTestId('timezone-select').selectOption('Etc/GMT+12')
-  await expect(page.getByText(/^selected: Anywhere on Earth/)).toBeVisible()
+  await layersPanel
+    .getByTestId('detail-mode-segmented')
+    .getByRole('button', { name: 'on', exact: true })
+    .click()
+  await expect(page.getByTestId('detail-map-view')).toBeVisible()
 
-  const mapBox = await map2d.boundingBox()
-  if (mapBox) {
-    for (let i = 0; i < 4; i += 1) {
-      await page.mouse.move(mapBox.x + mapBox.width * 0.5, mapBox.y + mapBox.height * 0.45)
-      await page.mouse.down()
-      await page.mouse.move(
-        mapBox.x + mapBox.width * 0.5 + 800 + i * 120,
-        mapBox.y + mapBox.height * 0.45 + i * 8
-      )
-      await page.mouse.up()
-    }
+  await layersPanel
+    .getByTestId('detail-mode-segmented')
+    .getByRole('button', { name: 'off', exact: true })
+    .click()
+  await expect(page.getByTestId('detail-map-view')).toBeHidden()
 
-    await page.mouse.move(mapBox.x + mapBox.width * 0.44, mapBox.y + mapBox.height * 0.4)
-    await page.mouse.wheel(0, -560)
-    await page.mouse.dblclick(mapBox.x + mapBox.width * 0.56, mapBox.y + mapBox.height * 0.54)
+  const switches = ['solar lines', 'civil timezones', 'terminator', 'landmarks']
+  for (const name of switches) {
+    const toggle = layersPanel.getByRole('switch', { name })
+    await toggle.click()
+    await toggle.click()
   }
 
-  await expect(map2d.getByText(/x$/)).toBeVisible()
-
-  await page.getByRole('button', { name: 'detail zoom' }).click()
-  const detail = page.getByTestId('detail-map-view')
-  await expect(detail).toBeVisible()
-  await page.getByRole('button', { name: 'building close-up' }).click()
-  await page.getByRole('button', { name: 'follow line: on' }).click()
-
-  const detailBox = await detail.boundingBox()
-  if (detailBox) {
-    await page.mouse.move(detailBox.x + detailBox.width * 0.5, detailBox.y + detailBox.height * 0.55)
-    await page.mouse.wheel(0, 2800)
-    await page.mouse.wheel(0, 2800)
+  const box = await map2d.boundingBox()
+  expect(box).toBeTruthy()
+  if (box) {
+    await page.mouse.move(box.x + box.width * 0.56, box.y + box.height * 0.52)
+    await page.mouse.wheel(0, -600)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.54)
+    await page.mouse.up()
   }
-
-  if (await detail.isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: 'detail zoom' }).click()
-  }
-
-  await expect(page.getByTestId('map2d-view')).toBeVisible()
-
-  await page.getByRole('button', { name: 'reset view' }).click()
-  await expect(map2d.getByText('1.00x')).toBeVisible()
-
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'snap' }).click()
-  const download = await downloadPromise
-  const path = await download.path()
-  expect(path).toBeTruthy()
 
   expect(pageErrors).toEqual([])
 })
 
-test('globe view keeps visible lines, supports drag/zoom and detail mode', async ({ page }) => {
-  const pageErrors: string[] = []
-  page.on('pageerror', (error) => pageErrors.push(error.message))
-  await page.addInitScript(() => window.localStorage.clear())
-
-  await page.goto('/')
-
-  await page.getByRole('button', { name: '3d globe' }).click()
-  const globe = page.getByTestId('globe3d-view')
-  await expect(globe).toBeVisible()
-
-  const globeBox = await globe.boundingBox()
-  if (globeBox) {
-    for (let i = 0; i < 3; i += 1) {
-      await page.mouse.move(globeBox.x + globeBox.width * 0.52, globeBox.y + globeBox.height * 0.48)
-      await page.mouse.down()
-      await page.mouse.move(
-        globeBox.x + globeBox.width * (0.65 + i * 0.05),
-        globeBox.y + globeBox.height * 0.5
-      )
-      await page.mouse.up()
-      await page.mouse.wheel(0, i % 2 === 0 ? 260 : -180)
-    }
-  }
-
-  await expect(page.getByText(/manual orbit active/i)).toBeVisible()
-  await page.getByRole('button', { name: 'reset orbit' }).click()
-
-  await expect(page.getByText(/target .* in/).first()).toBeVisible()
-
-  await page.getByRole('button', { name: 'detail zoom' }).click()
-  const detail = page.getByTestId('detail-map-view')
-  await expect(detail).toBeVisible()
-  await expect(detail.getByText(/pitched/)).toBeVisible()
-
-  await page.getByRole('button', { name: 'detail zoom' }).click()
-  await expect(page.getByTestId('globe3d-view')).toBeVisible()
-
-  await page.getByRole('button', { name: '2d map' }).click()
-  await expect(page.getByTestId('map2d-view')).toBeVisible()
-
-  expect(pageErrors).toEqual([])
-})
-
-test('debug layout checks report zero overlap/tap-target warnings on desktop', async ({ page }) => {
-  await page.goto('/?debug=1')
-  await expect(page.getByText(/warnings:\s*0/i)).toBeVisible({ timeout: 8_000 })
-})
-
-test('zoom remains anchored under cursor in 2d and detail views', async ({ page }) => {
+test('zoom remains cursor-anchored in 2d and detail-lens views', async ({ page }) => {
   await page.goto('/?demo=1&view=2d')
   const map2d = page.getByTestId('map2d-view')
   await expect(map2d).toBeVisible()
@@ -159,25 +134,29 @@ test('zoom remains anchored under cursor in 2d and detail views', async ({ page 
     return
   }
 
-  const targetX = box2d.x + box2d.width * 0.58
-  const targetY = box2d.y + box2d.height * 0.48
-
-  await page.mouse.move(targetX, targetY)
+  const x2d = box2d.x + box2d.width * 0.58
+  const y2d = box2d.y + box2d.height * 0.48
+  await page.mouse.move(x2d, y2d)
   await expect(page.getByTestId('map2d-hover')).toBeVisible()
+
   const before2d = await waitForLonLat(page.getByTestId('map2d-hover'), page)
   expect(before2d).not.toBeNull()
-
   await page.mouse.wheel(0, -760)
-  await page.mouse.move(targetX, targetY)
+  await page.mouse.move(x2d, y2d)
   const after2d = await waitForLonLat(page.getByTestId('map2d-hover'), page)
   expect(after2d).not.toBeNull()
-  expect(Math.abs((after2d?.lon ?? 0) - (before2d?.lon ?? 0))).toBeLessThan(1.6)
-  expect(Math.abs((after2d?.lat ?? 0) - (before2d?.lat ?? 0))).toBeLessThan(1.4)
+  expect(circularLonDelta(after2d?.lon ?? 0, before2d?.lon ?? 0)).toBeLessThan(0.35)
+  expect(Math.abs((after2d?.lat ?? 0) - (before2d?.lat ?? 0))).toBeLessThan(0.35)
 
-  await page.getByRole('button', { name: 'detail zoom' }).click()
+  await page.getByTestId('layers-button').click()
+  const layersPanel = page.getByTestId('layers-panel')
+  await layersPanel
+    .getByTestId('detail-mode-segmented')
+    .getByRole('button', { name: 'on', exact: true })
+    .click()
+
   const detail = page.getByTestId('detail-map-view')
   await expect(detail).toBeVisible()
-
   const detailBox = await detail.boundingBox()
   expect(detailBox).toBeTruthy()
   if (!detailBox) {
@@ -189,11 +168,53 @@ test('zoom remains anchored under cursor in 2d and detail views', async ({ page 
   await page.mouse.move(detailX, detailY)
   const beforeDetail = await waitForLonLat(page.getByTestId('detail-hover-readout'), page)
   expect(beforeDetail).not.toBeNull()
-
-  await page.mouse.wheel(0, -820)
+  await page.mouse.wheel(0, -800)
   await page.mouse.move(detailX, detailY)
   const afterDetail = await waitForLonLat(page.getByTestId('detail-hover-readout'), page)
   expect(afterDetail).not.toBeNull()
-  expect(Math.abs((afterDetail?.lon ?? 0) - (beforeDetail?.lon ?? 0))).toBeLessThan(1.6)
-  expect(Math.abs((afterDetail?.lat ?? 0) - (beforeDetail?.lat ?? 0))).toBeLessThan(1.4)
+  expect(circularLonDelta(afterDetail?.lon ?? 0, beforeDetail?.lon ?? 0)).toBeLessThan(1.3)
+  expect(Math.abs((afterDetail?.lat ?? 0) - (beforeDetail?.lat ?? 0))).toBeLessThan(1.3)
+})
+
+test('3d adds hover tooltip info and 2d/3d switching stays responsive', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.addInitScript(() => window.localStorage.clear())
+  await page.goto('/?demo=1')
+
+  await page.getByRole('button', { name: '3d', exact: true }).click()
+  const globe = page.getByTestId('globe3d-view')
+  await expect(globe).toBeVisible()
+
+  const globeBox = await globe.boundingBox()
+  expect(globeBox).toBeTruthy()
+  if (globeBox) {
+    await page.mouse.move(globeBox.x + globeBox.width * 0.5, globeBox.y + globeBox.height * 0.48)
+    await page.waitForTimeout(280)
+    await page.mouse.wheel(0, -220)
+    await page.mouse.down()
+    await page.mouse.move(globeBox.x + globeBox.width * 0.64, globeBox.y + globeBox.height * 0.5)
+    await page.mouse.up()
+  }
+
+  const tooltip = page.getByTestId('globe-hover-tooltip')
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip).toContainText(/civil:/i)
+  await expect(tooltip).toContainText(/solar:/i)
+  await expect(tooltip).toContainText(/Δ target:/i)
+
+  await page.getByRole('button', { name: '2d', exact: true }).click()
+  await expect(page.getByTestId('map2d-view')).toBeVisible()
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'snap' }).click()
+  const download = await downloadPromise
+  expect(await download.path()).toBeTruthy()
+
+  expect(pageErrors).toEqual([])
+})
+
+test('debug layout checks report zero overlap/tap-target warnings on desktop', async ({ page }) => {
+  await page.goto('/?debug=1')
+  await expect(page.getByText(/warnings:\s*0/i)).toBeVisible({ timeout: 8_000 })
 })

@@ -74,3 +74,23 @@
   - capture script waits for explicit 3D/detail readiness markers
 - Updated screenshot drift gate to compare pixel deltas with a strict tolerance threshold instead of raw file-byte equality.
 - Replaced rotated 3D screenshot mouse-drag capture with a deterministic capture bridge (`__deadlineCaptureSetGlobeView`) to reduce flaky frame-to-frame variation.
+- Added explicit stage-header greeting requirement text in UI + docs:
+  - `got a deadline? and wonder where on earth it literally is?`
+- Added long-horizon (`>24h`) unwind controls:
+  - start/stop unwind
+  - speed controls (x120/x720/x3600)
+  - remaining day/night cycle estimate
+- Added e2e interaction-harness coverage for unwind controls and repeated mode/button combinations.
+- Bumped project version to `0.3.2`.
+- Fixed CI e2e flake:
+  - adjusted harness to match accessible button names (`apply draft deadline`) and hardened button clicks with retry/force fallback for transient stability cases.
+  - validated on local: `format:check`, `lint`, `typecheck`, `test:e2e`, `test:e2e:gh-pages`.
+- Executed breaking map-first redesign (v0.4.0):
+  - removed permanent left panel and bottom card row from default view
+  - implemented 4 always-visible surfaces only: deadline chip, mode/snap/share cluster, layers button, countdown HUD
+  - moved editing/settings/stats/log into deadline/info drawers
+  - moved detail mode into layers panel (`auto|off|on`) and removed top-level detail button
+  - added 3D hover tooltip with civil/solar/delta fields + soft terminator band
+- Rebuilt Playwright suite for map-first architecture and revalidated GH-pages smoke tests.
+- Refreshed deterministic docs screenshots after redesign (`npm run ui:capture`).
+- Bumped project version to `0.4.0`.

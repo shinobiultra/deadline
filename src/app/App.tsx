@@ -1,14 +1,24 @@
 import html2canvas from 'html2canvas'
-import { Camera, Bug, Sparkles, Radar } from 'lucide-react'
+import {
+  Camera,
+  Bug,
+  Sparkles,
+  Layers3,
+  Share2,
+  Plus,
+  Copy,
+  Lock,
+  Unlock,
+  Trash2,
+  X,
+  MapPin
+} from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
-import { CommandPanel } from '@/ui/CommandPanel'
-import { CountdownCard } from '@/ui/CountdownCard'
 import { DebugOverlay } from '@/ui/DebugOverlay'
-import { DistanceBox } from '@/ui/DistanceBox'
 import { NearDeadlineEffects } from '@/ui/NearDeadlineEffects'
-import { SettingsDrawer } from '@/ui/SettingsDrawer'
-import { StatsStrip } from '@/ui/StatsStrip'
+import { Segmented } from '@/ui/Segmented'
+import { SwitchPill } from '@/ui/SwitchPill'
 import { ToastStack, type ToastItem } from '@/ui/ToastStack'
 import { Map2DView } from '@/views/map2d/Map2DView'
 import { DetailMapView } from '@/views/detail/DetailMapView'
@@ -38,18 +48,22 @@ import {
   solarLineSpeedDegreesPerHour
 } from '@/features/solar/solarMath'
 import { assetUrl } from '@/lib/assets'
+import { formatDuration, formatSignedMinutes } from '@/lib/time'
 import { useIntervalNow } from '@/lib/useIntervalNow'
 import { useRenderNow } from '@/lib/useRenderNow'
 
 const Globe3DView = lazy(() => import('@/views/globe3d/Globe3DView'))
 
 type ViewMode = '2d' | '3d'
+type DetailMode = 'auto' | 'off' | 'on'
+type BaseMapStyle = 'deadline-dark' | 'osm-light' | 'osm-dark'
+type EffectTier = 'off' | 'subtle' | 'spicy'
 
 type DemoConfig = {
   enabled: boolean
   debug: boolean
   initialView: ViewMode
-  detailOpen: boolean
+  initialDetailMode: DetailMode
   capture: boolean
 }
 
@@ -62,6 +76,8 @@ type DeadlineDraft = {
 
 const DEMO_NOW_ISO = '2026-02-05T08:21:44.000Z'
 const DEMO_NOW_MS = new Date(DEMO_NOW_ISO).getTime()
+const DAY_MS = 24 * 60 * 60 * 1000
+const UNWIND_SPEEDS = [120, 720, 3600] as const
 const DEMO_SLOT: DeadlineSlot = {
   id: 'demo-aoe-2026-02-05',
   name: 'deadline #1',
@@ -111,13 +127,35 @@ function formatTargetClock(totalMinutes: number): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
+function parseCurrentInput(date: string, time: string, zone: string): DateTime | null {
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) {
+    return null
+  }
+
+  const dt = DateTime.fromObject(
+    {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second: 0,
+      millisecond: 0
+    },
+    { zone: zone || 'UTC' }
+  )
+  return dt.isValid ? dt : null
+}
+
 function readDemoConfig(): DemoConfig {
   if (typeof window === 'undefined') {
     return {
       enabled: false,
       debug: false,
       initialView: '2d',
-      detailOpen: false,
+      initialDetailMode: 'auto',
       capture: false
     }
   }
@@ -128,13 +166,13 @@ function readDemoConfig(): DemoConfig {
   const capture = params.get('capture') === '1'
   const requestedView = params.get('view')?.toLowerCase()
   const initialView: ViewMode = requestedView === '3d' ? '3d' : '2d'
-  const detailOpen = requestedView === 'detail'
+  const initialDetailMode: DetailMode = requestedView === 'detail' ? 'on' : 'auto'
 
   return {
     enabled,
     debug,
     initialView,
-    detailOpen,
+    initialDetailMode,
     capture
   }
 }
@@ -144,10 +182,42 @@ export default function App() {
   const nowMs = useIntervalNow(1000)
   const { nowMs: renderNowMs, fps: renderFps, driftMs: renderDriftMs } = useRenderNow(60, 30)
   const [viewMode, setViewMode] = useState<ViewMode>(demo.initialView)
-  const [showDetailView, setShowDetailView] = useState(demo.detailOpen)
+  const [detailMode, setDetailMode] = useState<DetailMode>(demo.initialDetailMode)
+  const [baseMapStyle, setBaseMapStyle] = useState<BaseMapStyle>('deadline-dark')
+  const [effectsTier, setEffectsTier] = useState<EffectTier>(demo.enabled ? 'off' : 'subtle')
+  const [deadlineDrawerOpen, setDeadlineDrawerOpen] = useState(false)
+  const [infoDrawerOpen, setInfoDrawerOpen] = useState(false)
+  const [layersPanelOpen, setLayersPanelOpen] = useState(false)
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [timezoneSearch, setTimezoneSearch] = useState('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [locationPickArmed, setLocationPickArmed] = useState(false)
+  const [map2dViewState, setMap2dViewState] = useState<{
+    zoom: number
+    offsetX: number
+    offsetY: number
+    centerLon: number
+    centerLat: number
+  }>({
+    zoom: 1,
+    offsetX: 0,
+    offsetY: 0,
+    centerLon: 0,
+    centerLat: 0
+  })
+  const [globeViewState, setGlobeViewState] = useState<{ lat: number; lng: number; altitude: number }>({
+    lat: 18,
+    lng: 0,
+    altitude: 2.1
+  })
   const [cityQuery, setCityQuery] = useState('')
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [terminatorComputeMs, setTerminatorComputeMs] = useState(0)
+  const [unwindActive, setUnwindActive] = useState(false)
+  const [unwindSpeed, setUnwindSpeed] = useState<(typeof UNWIND_SPEEDS)[number]>(720)
+  const [unwindAnchor, setUnwindAnchor] = useState<{ realMs: number; simMs: number } | null>(null)
+  const unwindSpeedRef = useRef<(typeof UNWIND_SPEEDS)[number]>(720)
 
   const rootRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -191,11 +261,8 @@ export default function App() {
     setShowDayNight,
     setBrightDayLighting,
     setShowLandmarks,
-    setPreviewMode,
-    setScrubRatio,
     setUseApparentSolar,
     setUseTimezonePolygons,
-    setCivilGlowMinutes,
     setAlertThresholds,
     setEnableCrossingAlerts,
     setEnableBrowserNotifications,
@@ -330,7 +397,6 @@ export default function App() {
   const effectiveNowMs = demo.enabled ? DEMO_NOW_MS : nowMs
   const effectiveRenderNowMs = demo.enabled ? DEMO_NOW_MS : renderNowMs
   const visualNowMs = effectivePreviewMode === 'now' ? effectiveRenderNowMs : effectiveNowMs
-  const nowTime = useMemo(() => new Date(visualNowMs), [visualNowMs])
 
   const deadlineTimeDate = useMemo(() => {
     if (!activeParseResult.valid || !activeParseResult.deadlineUtcMs) {
@@ -339,9 +405,37 @@ export default function App() {
     return new Date(activeParseResult.deadlineUtcMs)
   }, [activeParseResult.deadlineUtcMs, activeParseResult.valid])
 
+  const unwindEligible =
+    activeParseResult.valid &&
+    activeParseResult.deadlineUtcMs !== undefined &&
+    activeParseResult.deadlineUtcMs - effectiveNowMs > DAY_MS
+
+  const unwindSimMs = useMemo(() => {
+    if (!unwindActive || !unwindEligible || !unwindAnchor || activeParseResult.deadlineUtcMs === undefined) {
+      return null
+    }
+
+    const elapsedRealMs = Math.max(0, effectiveRenderNowMs - unwindAnchor.realMs)
+    const simulated = unwindAnchor.simMs + elapsedRealMs * unwindSpeed
+    return Math.min(simulated, activeParseResult.deadlineUtcMs)
+  }, [
+    activeParseResult.deadlineUtcMs,
+    effectiveRenderNowMs,
+    unwindActive,
+    unwindAnchor,
+    unwindEligible,
+    unwindSpeed
+  ])
+
+  const nowTime = useMemo(() => new Date(unwindSimMs ?? visualNowMs), [unwindSimMs, visualNowMs])
+
   const displayTime = useMemo(() => {
     if (!activeParseResult.valid || !activeParseResult.deadlineUtcMs) {
       return new Date(visualNowMs)
+    }
+
+    if (unwindSimMs !== null) {
+      return new Date(unwindSimMs)
     }
 
     if (effectivePreviewMode === 'deadline') {
@@ -361,6 +455,7 @@ export default function App() {
     effectiveNowMs,
     effectivePreviewMode,
     effectiveScrubRatio,
+    unwindSimMs,
     visualNowMs
   ])
 
@@ -446,11 +541,52 @@ export default function App() {
     ? activeParseResult.deadlineUtcMs - effectiveNowMs
     : Number.POSITIVE_INFINITY
 
+  const unwindReferenceMs = unwindSimMs ?? effectiveNowMs
+  const unwindCyclesLeft =
+    activeParseResult.deadlineUtcMs === undefined
+      ? 0
+      : Math.max(0, (activeParseResult.deadlineUtcMs - unwindReferenceMs) / DAY_MS)
+  const unwindTotalCycles =
+    activeParseResult.deadlineUtcMs === undefined
+      ? 0
+      : Math.max(0, (activeParseResult.deadlineUtcMs - effectiveNowMs) / DAY_MS)
+  const unwindPreviewUtcLabel = DateTime.fromMillis(unwindReferenceMs, { zone: 'utc' }).toFormat(
+    "yyyy-LL-dd HH:mm 'utc'"
+  )
+
   const deadlineZoneLabel = describeTimezone(activeSlot?.zone ?? draftDeadline.zone)
   const targetClockLabel =
     activeParseResult.valid && activeParseResult.targetMinutesOfDay !== undefined
       ? formatTargetClock(activeParseResult.targetMinutesOfDay)
       : '--:--'
+
+  useEffect(() => {
+    unwindSpeedRef.current = unwindSpeed
+  }, [unwindSpeed])
+
+  useEffect(() => {
+    setUnwindActive(false)
+    setUnwindAnchor(null)
+  }, [activeParseResult.deadlineUtcMs, slotsState.activeId])
+
+  useEffect(() => {
+    if (!unwindEligible && unwindActive) {
+      setUnwindActive(false)
+      setUnwindAnchor(null)
+    }
+  }, [unwindActive, unwindEligible])
+
+  useEffect(() => {
+    if (
+      unwindActive &&
+      unwindSimMs !== null &&
+      activeParseResult.deadlineUtcMs !== undefined &&
+      unwindSimMs >= activeParseResult.deadlineUtcMs - 1
+    ) {
+      setUnwindActive(false)
+      setUnwindAnchor(null)
+    }
+  }, [activeParseResult.deadlineUtcMs, unwindActive, unwindSimMs])
 
   const pushToast = useCallback((id: string, message: string) => {
     setToasts((previous) => {
@@ -465,6 +601,47 @@ export default function App() {
       setToasts((previous) => previous.filter((toast) => toast.id !== id))
     }, 9_000)
   }, [])
+
+  const toggleUnwind = useCallback(() => {
+    if (!unwindEligible || activeParseResult.deadlineUtcMs === undefined) {
+      return
+    }
+
+    if (unwindActive) {
+      setUnwindActive(false)
+      setUnwindAnchor(null)
+      return
+    }
+
+    setUnwindAnchor({
+      realMs: effectiveRenderNowMs,
+      simMs: effectiveNowMs
+    })
+    setUnwindActive(true)
+  }, [activeParseResult.deadlineUtcMs, effectiveNowMs, effectiveRenderNowMs, unwindActive, unwindEligible])
+
+  const setUnwindSpeedTracked = useCallback(
+    (next: (typeof UNWIND_SPEEDS)[number]) => {
+      if (next === unwindSpeedRef.current) {
+        return
+      }
+
+      if (unwindActive && unwindAnchor && activeParseResult.deadlineUtcMs !== undefined) {
+        const elapsedRealMs = Math.max(0, effectiveRenderNowMs - unwindAnchor.realMs)
+        const currentSimMs = Math.min(
+          unwindAnchor.simMs + elapsedRealMs * unwindSpeedRef.current,
+          activeParseResult.deadlineUtcMs
+        )
+        setUnwindAnchor({
+          realMs: effectiveRenderNowMs,
+          simMs: currentSimMs
+        })
+      }
+
+      setUnwindSpeed(next)
+    },
+    [activeParseResult.deadlineUtcMs, effectiveRenderNowMs, unwindActive, unwindAnchor]
+  )
 
   const updateDraftField = useCallback(
     (patch: Partial<DeadlineDraft>) => {
@@ -666,10 +843,110 @@ export default function App() {
     setDraftDeadline(draftFromSlot(activeSlot))
   }, [activeSlot])
 
-  const handleDetailZoomOutExit = useCallback(() => {
-    setShowDetailView(false)
-    pushToast(`detail-auto-${Date.now()}`, 'zoomed out: switched back to deadLINE map')
-  }, [pushToast])
+  const closeDeadlineDrawer = useCallback(() => {
+    if (draftDirty) {
+      const shouldDiscard = window.confirm('discard unsaved draft changes?')
+      if (!shouldDiscard) {
+        return
+      }
+      discardDraft()
+    }
+    setDeadlineDrawerOpen(false)
+    setDeleteConfirmText('')
+    setQuickActionsOpen(false)
+  }, [discardDraft, draftDirty])
+
+  const quickShiftDraft = useCallback(
+    (duration: { days?: number; hours?: number; minutes?: number }) => {
+      const current = parseCurrentInput(draftDeadline.date, draftDeadline.time, draftDeadline.zone)
+      if (!current) {
+        return
+      }
+      const next = current.plus(duration).set({ second: 0, millisecond: 0 })
+      updateDraftField({
+        date: next.toISODate() ?? draftDeadline.date,
+        time: next.toFormat('HH:mm')
+      })
+    },
+    [draftDeadline, updateDraftField]
+  )
+
+  const applyNow24hDraft = useCallback(() => {
+    const next = DateTime.fromMillis(effectiveNowMs)
+      .setZone(draftDeadline.zone || 'UTC')
+      .plus({ day: 1 })
+      .set({ second: 0, millisecond: 0 })
+
+    updateDraftField({
+      date: next.toISODate() ?? draftDeadline.date,
+      time: next.toFormat('HH:mm')
+    })
+  }, [draftDeadline.date, draftDeadline.zone, effectiveNowMs, updateDraftField])
+
+  const requestBrowserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      pushToast(`geo-${Date.now()}`, 'geolocation unavailable in this browser')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          label: `my location (${position.coords.latitude.toFixed(3)}, ${position.coords.longitude.toFixed(3)})`
+        })
+        pushToast(`geo-ok-${Date.now()}`, 'location set')
+      },
+      () => {
+        pushToast(`geo-fail-${Date.now()}`, 'location permission denied')
+      },
+      { enableHighAccuracy: true, timeout: 10_000 }
+    )
+  }, [pushToast, setLocation])
+
+  const createShareUrl = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('date', draftDeadline.date)
+    url.searchParams.set('time', draftDeadline.time)
+    url.searchParams.set('zone', draftDeadline.zone)
+    url.searchParams.set('view', viewMode)
+    url.searchParams.set(
+      'layers',
+      [
+        effectiveShowSolarTime ? 'solar' : '',
+        effectiveShowTimezones ? 'civil' : '',
+        effectiveShowDayNight ? 'terminator' : '',
+        effectiveShowLandmarks ? 'landmarks' : ''
+      ]
+        .filter(Boolean)
+        .join(',')
+    )
+    url.searchParams.set('detail', detailMode)
+    url.searchParams.set('base', baseMapStyle)
+    return url.toString()
+  }, [
+    baseMapStyle,
+    detailMode,
+    draftDeadline.date,
+    draftDeadline.time,
+    draftDeadline.zone,
+    effectiveShowDayNight,
+    effectiveShowLandmarks,
+    effectiveShowSolarTime,
+    effectiveShowTimezones,
+    viewMode
+  ])
+
+  const shareCurrentState = useCallback(async () => {
+    const shareUrl = createShareUrl()
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      pushToast(`share-${Date.now()}`, 'share link copied')
+    } catch {
+      pushToast(`share-fail-${Date.now()}`, shareUrl)
+    }
+  }, [createShareUrl, pushToast])
 
   const [firedAlerts, setFiredAlerts] = useState<Set<string>>(() => new Set())
   const latestNowRef = useRef(effectiveNowMs)
@@ -769,18 +1046,29 @@ export default function App() {
         setDebugMode((value) => !value)
       }
 
-      if (key === 'z') {
-        setShowDetailView((value) => !value)
-      }
-
       if (isMetaCombo && key === 'enter') {
         event.preventDefault()
         applyDraftToActive()
       }
 
-      if (event.key === 'Escape' && draftDirty) {
-        event.preventDefault()
-        discardDraft()
+      if (event.key === 'Escape') {
+        if (deadlineDrawerOpen) {
+          event.preventDefault()
+          closeDeadlineDrawer()
+          return
+        }
+
+        if (layersPanelOpen) {
+          event.preventDefault()
+          setLayersPanelOpen(false)
+          return
+        }
+
+        if (infoDrawerOpen) {
+          event.preventDefault()
+          setInfoDrawerOpen(false)
+          return
+        }
       }
 
       if (isMetaCombo && key === 'd' && !event.shiftKey) {
@@ -803,7 +1091,85 @@ export default function App() {
 
     window.addEventListener('keydown', onKeydown)
     return () => window.removeEventListener('keydown', onKeydown)
-  }, [applyDraftToActive, discardDraft, draftDirty, duplicateActiveSlot, slotsState.slots, switchSlot])
+  }, [
+    applyDraftToActive,
+    closeDeadlineDrawer,
+    deadlineDrawerOpen,
+    duplicateActiveSlot,
+    infoDrawerOpen,
+    layersPanelOpen,
+    slotsState.slots,
+    switchSlot
+  ])
+
+  const timezoneMatches = useMemo(() => {
+    const query = timezoneSearch.trim().toLowerCase()
+    const baseMatches = (
+      query
+        ? timezones.filter((option) => option.searchTerms.some((term) => term.includes(query)))
+        : timezones
+    ).slice(0, 250)
+
+    if (baseMatches.some((option) => option.value === draftDeadline.zone)) {
+      return baseMatches
+    }
+
+    const selected = timezones.find((option) => option.value === draftDeadline.zone)
+    if (!selected) {
+      return baseMatches
+    }
+
+    return [selected, ...baseMatches.slice(0, 249)]
+  }, [draftDeadline.zone, timezones, timezoneSearch])
+
+  const effectiveDetailMode: DetailMode = detailMode
+  const detailActive =
+    viewMode === '2d' &&
+    effectiveDetailMode !== 'off' &&
+    (effectiveDetailMode === 'on' || map2dViewState.zoom >= 2.7)
+
+  const activeStateChip: 'synced' | 'draft' | 'locked' = activeSlot?.locked
+    ? 'locked'
+    : draftDirty
+      ? 'draft'
+      : 'synced'
+
+  const changedFields = useMemo(() => {
+    if (!activeSlot) {
+      return []
+    }
+    const changed: string[] = []
+    if (draftDeadline.date !== activeSlot.date) changed.push('date')
+    if (draftDeadline.time !== activeSlot.time) changed.push('time')
+    if (draftDeadline.zone !== activeSlot.zone) changed.push('timezone')
+    if (draftDeadline.ambiguousPreference !== activeSlot.ambiguousPreference) changed.push('dst preference')
+    return changed
+  }, [activeSlot, draftDeadline])
+
+  const deadlineUtcLabel =
+    activeParseResult.deadlineUtcMs !== undefined
+      ? DateTime.fromMillis(activeParseResult.deadlineUtcMs, { zone: 'utc' }).toFormat(
+          "yyyy-LL-dd HH:mm 'utc'"
+        )
+      : 'invalid deadline'
+
+  const deadlineJstLabel =
+    activeParseResult.deadlineUtcMs !== undefined
+      ? DateTime.fromMillis(activeParseResult.deadlineUtcMs, { zone: 'Asia/Tokyo' }).toFormat("HH:mm 'jst'")
+      : '--:-- jst'
+
+  const countdownLabel =
+    activeParseResult.deadlineUtcMs !== undefined
+      ? `T-${formatDuration(Math.max(0, activeParseResult.deadlineUtcMs - effectiveNowMs))}`
+      : 'T-unknown'
+
+  const recentEvents = crossingPlan.slice(0, 3).map((crossing) => ({
+    id: crossing.id,
+    label: `${crossing.landmark.name} · ${DateTime.fromMillis(crossing.crossingMs).toFormat('HH:mm:ss')}`
+  }))
+
+  const shouldReduceEffects =
+    effectiveReducedMotion || effectsTier === 'off' || (viewMode === '3d' ? renderFps < 45 : renderFps < 55)
 
   const debugPerf = demo.enabled
     ? {
@@ -817,6 +1183,8 @@ export default function App() {
         terminatorComputeMs
       }
 
+  const detailStyleVariant = baseMapStyle === 'osm-light' ? 'osm-light' : 'osm-dark'
+
   return (
     <main
       className={`relative min-h-screen overflow-hidden bg-bg text-ink ${demo.capture ? 'capture-mode' : ''}`}
@@ -824,217 +1192,83 @@ export default function App() {
     >
       <div className="noise-overlay" />
       <div className="scanline-overlay" />
-
-      <div className="relative mx-auto grid max-w-[1540px] items-start gap-3 px-3 py-3 md:grid-cols-[360px_1fr]">
-        <aside className="md:sticky md:top-3">
-          <CommandPanel
-            nowMs={effectiveNowMs}
-            deadlineDate={draftDeadline.date}
-            setDeadlineDate={(value) => updateDraftField({ date: value })}
-            deadlineTime={draftDeadline.time}
-            setDeadlineTime={(value) => updateDraftField({ time: value })}
-            deadlineZone={draftDeadline.zone}
-            setDeadlineZone={(value) => updateDraftField({ zone: normalizeDeadlineZone(value) })}
-            timezoneOptions={timezones}
-            parseResult={draftParseResult}
-            activeParseResult={activeParseResult}
-            ambiguousPreference={draftDeadline.ambiguousPreference}
-            setAmbiguousPreference={(value) => updateDraftField({ ambiguousPreference: value })}
-            activeSlot={
-              activeSlot
-                ? {
-                    id: activeSlot.id,
-                    name: activeSlot.name,
-                    date: activeSlot.date,
-                    time: activeSlot.time,
-                    zone: activeSlot.zone,
-                    locked: activeSlot.locked
-                  }
-                : null
-            }
-            slots={slotsState.slots.map((slot) => ({
-              id: slot.id,
-              name: slot.name
-            }))}
-            activeSlotId={slotsState.activeId}
-            draftDirty={draftDirty}
-            onSwitchSlot={switchSlot}
-            onAddSlot={addNewSlot}
-            onDuplicateSlot={duplicateActiveSlot}
-            onToggleLock={toggleActiveLock}
-            onRenameSlot={renameActiveSlot}
-            onDeleteSlot={deleteActiveSlot}
-            onApplyDraft={applyDraftToActive}
-            onDiscardDraft={discardDraft}
-            applyDisabled={
-              demo.enabled || !draftParseResult.valid || !draftDirty || Boolean(activeSlot?.locked)
-            }
-            location={effectiveLocation}
-            setLocation={(value) => {
-              if (!demoOverridesEnabled) {
-                setLocation(value)
-              }
-            }}
-            cityQuery={cityQuery}
-            setCityQuery={setCityQuery}
-            cityResults={cityResults}
-            showTimezones={effectiveShowTimezones}
-            setShowTimezones={(value) => {
-              if (!demoOverridesEnabled) {
-                setShowTimezones(value)
-              }
-            }}
-            showSolarTime={effectiveShowSolarTime}
-            setShowSolarTime={(value) => {
-              if (!demoOverridesEnabled) {
-                setShowSolarTime(value)
-              }
-            }}
-            showDayNight={effectiveShowDayNight}
-            setShowDayNight={(value) => {
-              if (!demoOverridesEnabled) {
-                setShowDayNight(value)
-              }
-            }}
-            showLandmarks={effectiveShowLandmarks}
-            setShowLandmarks={(value) => {
-              if (!demoOverridesEnabled) {
-                setShowLandmarks(value)
-              }
-            }}
-            previewMode={effectivePreviewMode}
-            setPreviewMode={(value) => {
-              if (!demoOverridesEnabled) {
-                setPreviewMode(value)
-              }
-            }}
-            scrubRatio={effectiveScrubRatio}
-            setScrubRatio={(value) => {
-              if (!demoOverridesEnabled) {
-                setScrubRatio(value)
-              }
-            }}
-            demoMode={demo.enabled}
-          />
-        </aside>
-
-        <section className="grid gap-2" ref={stageRef} data-debug-key="map-stage">
-          <header
-            className="border-cyan-300/20 flex items-center justify-between rounded-xl border bg-panel/40 p-2 text-xs"
-            data-debug-key="stage-header"
-          >
-            <h1 className="text-cyan-100 font-mono text-sm tracking-[0.18em]">deadline</h1>
-            <div className="flex items-center gap-2" data-debug-key="view-toggle-row">
-              <button
-                className={`btn-toggle px-2 py-1 ${viewMode === '2d' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setViewMode('2d')}
-              >
-                2d map
-              </button>
-              <button
-                className={`btn-toggle px-2 py-1 ${viewMode === '3d' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setViewMode('3d')}
-              >
-                3d globe
-              </button>
-              <button
-                className={`btn-toggle px-2 py-1 ${showDetailView ? 'active' : ''}`}
-                type="button"
-                onClick={() => setShowDetailView((value) => !value)}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <Radar size={14} />
-                  detail zoom
-                </span>
-              </button>
-              <button
-                className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
-                type="button"
-                onClick={async () => {
-                  if (!stageRef.current) return
-                  const canvas = await html2canvas(stageRef.current, { backgroundColor: null })
-                  canvas.toBlob((blob) => {
-                    if (!blob) return
-                    downloadBlob(blob, 'deadline-snap.png')
-                  }, 'image/png')
-                }}
-              >
-                <Camera size={14} />
-                snap
-              </button>
-              <button
-                className={`btn-ghost inline-flex items-center gap-1 px-2 py-1 ${debugMode ? 'border-rose-300/60 text-rose-200' : ''}`}
-                type="button"
-                onClick={() => setDebugMode((value) => !value)}
-              >
-                <Bug size={14} />
-                debug
-              </button>
-            </div>
-          </header>
-
+      <section className="relative h-screen w-screen p-2 md:p-3" ref={stageRef} data-debug-key="map-stage">
+        <div className="border-cyan-400/25 relative h-full w-full overflow-hidden rounded-2xl border bg-black/30 shadow-neon">
           {debugMode && assetCheckError ? (
-            <div className="rounded-md border border-rose-300/65 bg-rose-950/45 px-2 py-1 text-xs text-rose-100">
+            <div className="absolute left-3 right-3 top-3 z-30 rounded-md border border-rose-300/65 bg-rose-950/60 px-2 py-1 text-xs text-rose-100">
               {assetCheckError}
             </div>
           ) : null}
 
-          <div className="border-cyan-300/30 bg-black/38 text-cyan-100/88 rounded-md border px-2 py-1 text-[11px]">
-            <p className="text-cyan-50 font-mono">
-              {activeSlot
-                ? `${activeSlot.name} — ${activeSlot.date} ${activeSlot.time} ${deadlineZoneLabel}`
-                : 'no active deadline'}
-            </p>
-            <p className="text-cyan-100/75">
-              target {targetClockLabel}
-              {' • '}
-              {activeSlot?.locked ? 'locked' : draftDirty ? 'draft unsaved' : 'synced'}
-            </p>
-          </div>
+          {activeParseResult.valid && activeParseResult.targetMinutesOfDay !== undefined ? (
+            <>
+              {viewMode === '2d' ? (
+                <div className="absolute inset-0">
+                  <Map2DView
+                    nowTime={nowTime}
+                    displayTime={displayTime}
+                    deadlineTime={deadlineTimeDate}
+                    targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
+                    deadlineZoneLabel={deadlineZoneLabel}
+                    deadlineOffsetMinutes={activeParseResult.selectedOffsetMinutes}
+                    showTimezones={effectiveShowTimezones}
+                    showSolarTime={effectiveShowSolarTime}
+                    showDayNight={effectiveShowDayNight}
+                    brightDayLighting={effectiveBrightDayLighting}
+                    showLandmarks={effectiveShowLandmarks}
+                    useApparentSolar={effectiveUseApparentSolar}
+                    useTimezonePolygons={effectiveUseTimezonePolygonsMode}
+                    timezonePolygons={timezonePolygons}
+                    civilGlowMinutes={civilGlowMinutes}
+                    location={effectiveLocation}
+                    landmarks={landmarks}
+                    reducedMotion={effectiveReducedMotion}
+                    baseMapStyle={baseMapStyle}
+                    initialViewState={map2dViewState}
+                    onViewStateChange={setMap2dViewState}
+                    onMapClick={
+                      locationPickArmed
+                        ? ({ lat, lon }) => {
+                            if (!demoOverridesEnabled) {
+                              setLocation({
+                                lat,
+                                lon,
+                                label: `picked ${lat.toFixed(3)}, ${lon.toFixed(3)}`
+                              })
+                            }
+                            setLocationPickArmed(false)
+                            pushToast(`pick-${Date.now()}`, 'location pinned from map')
+                          }
+                        : undefined
+                    }
+                    showInlineLegend={false}
+                    showResetButton={false}
+                    showStatusOverlay={false}
+                    onPerf={({ terminatorComputeMs: ms }) => setTerminatorComputeMs(ms)}
+                  />
 
-          <div className="relative h-[clamp(340px,58vh,640px)] overflow-hidden rounded-xl">
-            {activeParseResult.valid && activeParseResult.targetMinutesOfDay !== undefined ? (
-              showDetailView ? (
-                <DetailMapView
-                  mode={viewMode}
-                  nowTime={nowTime}
-                  targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
-                  solarNowLongitude={solarLongitude}
-                  solarDeadlineLongitude={deadlineSolarLongitude}
-                  location={effectiveLocation}
-                  showLandmarks={effectiveShowLandmarks}
-                  landmarks={landmarks}
-                  onZoomedOutExit={handleDetailZoomOutExit}
-                  captureMode={demo.capture}
-                />
-              ) : viewMode === '2d' ? (
-                <Map2DView
-                  nowTime={nowTime}
-                  displayTime={displayTime}
-                  deadlineTime={deadlineTimeDate}
-                  targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
-                  deadlineZoneLabel={deadlineZoneLabel}
-                  deadlineOffsetMinutes={activeParseResult.selectedOffsetMinutes}
-                  showTimezones={effectiveShowTimezones}
-                  showSolarTime={effectiveShowSolarTime}
-                  showDayNight={effectiveShowDayNight}
-                  brightDayLighting={effectiveBrightDayLighting}
-                  showLandmarks={effectiveShowLandmarks}
-                  useApparentSolar={effectiveUseApparentSolar}
-                  useTimezonePolygons={effectiveUseTimezonePolygonsMode}
-                  timezonePolygons={timezonePolygons}
-                  civilGlowMinutes={civilGlowMinutes}
-                  location={effectiveLocation}
-                  landmarks={landmarks}
-                  reducedMotion={effectiveReducedMotion}
-                  onPerf={({ terminatorComputeMs: ms }) => setTerminatorComputeMs(ms)}
-                />
+                  <div
+                    className={`absolute inset-0 transition-opacity duration-300 ${detailActive ? 'visible opacity-100' : 'pointer-events-none invisible opacity-0'}`}
+                  >
+                    <DetailMapView
+                      mode="2d"
+                      nowTime={nowTime}
+                      targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
+                      solarNowLongitude={solarLongitude}
+                      solarDeadlineLongitude={deadlineSolarLongitude}
+                      location={effectiveLocation}
+                      showLandmarks={effectiveShowLandmarks}
+                      landmarks={landmarks}
+                      captureMode={demo.capture}
+                      styleVariant={detailStyleVariant}
+                      minimalUi
+                    />
+                  </div>
+                </div>
               ) : (
                 <Suspense
                   fallback={
-                    <div className="border-cyan-400/20 text-cyan-100/70 grid h-full min-h-[320px] place-items-center rounded-xl border bg-black/30 text-sm">
+                    <div className="border-cyan-400/20 text-cyan-100/70 absolute inset-0 grid min-h-[320px] place-items-center rounded-xl border bg-black/30 text-sm">
                       loading globe chunk...
                     </div>
                   }
@@ -1055,82 +1289,771 @@ export default function App() {
                     location={effectiveLocation}
                     landmarks={landmarks}
                     captureMode={demo.capture}
+                    initialViewState={globeViewState}
+                    onViewStateChange={setGlobeViewState}
+                    minimalHud
+                    onPickLocation={
+                      locationPickArmed
+                        ? (pickedLocation) => {
+                            if (!demoOverridesEnabled) {
+                              setLocation(pickedLocation)
+                            }
+                            setLocationPickArmed(false)
+                            pushToast(`pick-${Date.now()}`, 'location pinned from globe')
+                          }
+                        : undefined
+                    }
                   />
                 </Suspense>
-              )
-            ) : (
-              <div className="grid h-full min-h-[320px] place-items-center rounded-xl border border-rose-400/25 bg-rose-950/10 text-sm text-rose-200">
-                fix deadline input to render map
-              </div>
-            )}
+              )}
+            </>
+          ) : (
+            <div className="absolute inset-0 grid min-h-[320px] place-items-center rounded-xl border border-rose-400/25 bg-rose-950/10 text-sm text-rose-200">
+              fix deadline input to render map
+            </div>
+          )}
 
-            <NearDeadlineEffects remainingMs={remainingMs} reducedMotion={effectiveReducedMotion} />
+          <NearDeadlineEffects remainingMs={remainingMs} reducedMotion={shouldReduceEffects} />
 
-            {remainingMs <= 60 * 60_000 && remainingMs > 0 ? (
-              <div className="pointer-events-none absolute bottom-3 right-3 rounded-md border border-amber-300/45 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-100">
-                <span className="inline-flex items-center gap-1">
-                  <Sparkles size={13} />
-                  deadline pressure rising
-                </span>
+          <p className="border-cyan-300/30 text-cyan-100/80 pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border bg-black/40 px-3 py-1 text-[11px]">
+            got a deadline? and wonder where on earth it literally is?
+          </p>
+
+          <button
+            type="button"
+            data-testid="deadline-chip"
+            className="border-cyan-300/45 absolute left-3 top-3 z-20 max-w-[min(420px,70vw)] rounded-lg border bg-black/65 px-3 py-2 text-left shadow-neon"
+            onClick={() => setDeadlineDrawerOpen(true)}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              setQuickActionsOpen((value) => !value)
+            }}
+          >
+            <p className="text-cyan-50 font-mono text-sm">
+              {activeSlot?.name ?? 'deadline'} · {activeSlot?.date ?? draftDeadline.date}{' '}
+              {activeSlot?.time ?? draftDeadline.time} {deadlineZoneLabel.toLowerCase()}
+            </p>
+            <p className="text-cyan-100/80 text-[11px]">
+              = {deadlineUtcLabel} · {deadlineJstLabel}
+            </p>
+            <span
+              className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] ${
+                activeStateChip === 'locked'
+                  ? 'border-sky-300/55 bg-sky-950/45 text-sky-100'
+                  : activeStateChip === 'draft'
+                    ? 'border-amber-300/55 bg-amber-950/45 text-amber-100'
+                    : 'border-neon/55 bg-emerald-950/40 text-emerald-100'
+              }`}
+            >
+              {activeStateChip}
+            </span>
+          </button>
+
+          {quickActionsOpen ? (
+            <div className="border-cyan-300/45 absolute left-3 top-24 z-30 flex gap-2 rounded-md border bg-black/80 p-2 text-xs shadow-neon">
+              <button type="button" className="btn-ghost px-2 py-1" onClick={addNewSlot}>
+                <Plus size={14} />
+                new
+              </button>
+              <button type="button" className="btn-ghost px-2 py-1" onClick={duplicateActiveSlot}>
+                <Copy size={14} />
+                dup
+              </button>
+              <button type="button" className="btn-ghost px-2 py-1" onClick={toggleActiveLock}>
+                {activeSlot?.locked ? <Unlock size={14} /> : <Lock size={14} />}
+                {activeSlot?.locked ? 'unlock' : 'lock'}
+              </button>
+              <button type="button" className="btn-ghost px-2 py-1" onClick={shareCurrentState}>
+                <Share2 size={14} />
+                share
+              </button>
+            </div>
+          ) : null}
+
+          <div
+            className="absolute right-3 top-3 z-20 flex items-center gap-2"
+            data-debug-key="view-toggle-row"
+          >
+            <Segmented
+              value={viewMode}
+              onChange={(next) => {
+                if (next === '3d') {
+                  setGlobeViewState((previous) => ({
+                    ...previous,
+                    lng: map2dViewState.centerLon,
+                    lat: map2dViewState.centerLat
+                  }))
+                }
+                setViewMode(next)
+              }}
+              options={[
+                { value: '2d', label: '2d' },
+                { value: '3d', label: '3d' }
+              ]}
+            />
+            <button
+              className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
+              type="button"
+              onClick={async () => {
+                if (!stageRef.current) return
+                const canvas = await html2canvas(stageRef.current, { backgroundColor: null })
+                canvas.toBlob((blob) => {
+                  if (!blob) return
+                  downloadBlob(blob, 'deadline-snap.png')
+                }, 'image/png')
+              }}
+            >
+              <Camera size={14} />
+              snap
+            </button>
+            <button
+              className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
+              type="button"
+              onClick={shareCurrentState}
+            >
+              <Share2 size={14} />
+              share
+            </button>
+          </div>
+
+          <button
+            type="button"
+            data-testid="countdown-hud"
+            className="absolute bottom-3 left-3 z-20 rounded-lg border border-neon/55 bg-black/65 px-3 py-2 text-left shadow-neon"
+            onClick={() => setInfoDrawerOpen((value) => !value)}
+          >
+            <p className="font-mono text-lg text-neon">{countdownLabel}</p>
+            <p className="text-cyan-100/75 text-[11px]">deadline instant: {deadlineUtcLabel}</p>
+          </button>
+
+          <div className="absolute bottom-3 right-3 z-20">
+            <button
+              type="button"
+              data-testid="layers-button"
+              className="btn-neon inline-flex items-center gap-1 px-3 py-2"
+              onClick={() => setLayersPanelOpen((value) => !value)}
+            >
+              <Layers3 size={15} />
+              layers
+            </button>
+
+            {layersPanelOpen ? (
+              <div
+                className="border-cyan-300/45 absolute bottom-12 right-0 w-[330px] max-w-[88vw] rounded-lg border bg-black/85 p-3 text-xs shadow-neon"
+                data-testid="layers-panel"
+              >
+                <p className="text-cyan-200/70 text-[10px] uppercase tracking-[0.14em]">base map</p>
+                <div className="mt-1" data-testid="base-style-segmented">
+                  <Segmented
+                    value={baseMapStyle}
+                    onChange={setBaseMapStyle}
+                    options={[
+                      { value: 'deadline-dark', label: 'deadLINE dark' },
+                      { value: 'osm-light', label: 'osm light' },
+                      { value: 'osm-dark', label: 'osm dark' }
+                    ]}
+                  />
+                </div>
+
+                <p className="text-cyan-200/70 mt-3 text-[10px] uppercase tracking-[0.14em]">overlays</p>
+                <div className="mt-1 grid gap-2">
+                  <SwitchPill
+                    label="solar lines"
+                    checked={effectiveShowSolarTime}
+                    onCheckedChange={(value) => {
+                      if (!demoOverridesEnabled) {
+                        setShowSolarTime(value)
+                      }
+                    }}
+                  />
+                  <SwitchPill
+                    label="civil timezones"
+                    checked={effectiveShowTimezones}
+                    onCheckedChange={(value) => {
+                      if (!demoOverridesEnabled) {
+                        setShowTimezones(value)
+                      }
+                    }}
+                  />
+                  <SwitchPill
+                    label="terminator"
+                    checked={effectiveShowDayNight}
+                    onCheckedChange={(value) => {
+                      if (!demoOverridesEnabled) {
+                        setShowDayNight(value)
+                      }
+                    }}
+                  />
+                  <SwitchPill
+                    label="landmarks"
+                    checked={effectiveShowLandmarks}
+                    onCheckedChange={(value) => {
+                      if (!demoOverridesEnabled) {
+                        setShowLandmarks(value)
+                      }
+                    }}
+                  />
+                </div>
+
+                <p className="text-cyan-200/70 mt-3 text-[10px] uppercase tracking-[0.14em]">detail lens</p>
+                <div className="mt-1" data-testid="detail-mode-segmented">
+                  <Segmented
+                    value={effectiveDetailMode}
+                    onChange={(next) => {
+                      if (!demoOverridesEnabled) {
+                        setDetailMode(next)
+                      }
+                    }}
+                    options={[
+                      { value: 'auto', label: 'auto' },
+                      { value: 'off', label: 'off' },
+                      { value: 'on', label: 'on' }
+                    ]}
+                  />
+                </div>
+
+                <p className="text-cyan-200/70 mt-3 text-[10px] uppercase tracking-[0.14em]">effects</p>
+                <div className="mt-1" data-testid="effects-segmented">
+                  <Segmented
+                    value={effectsTier}
+                    onChange={setEffectsTier}
+                    options={[
+                      { value: 'off', label: 'off' },
+                      { value: 'subtle', label: 'subtle' },
+                      { value: 'spicy', label: 'spicy' }
+                    ]}
+                  />
+                </div>
+
+                <details className="mt-3">
+                  <summary className="text-cyan-100/80 cursor-pointer">legend</summary>
+                  <p className="text-cyan-100/70 mt-1">
+                    mint = solar now · amber = at deadline · cyan = terminator
+                  </p>
+                </details>
               </div>
             ) : null}
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            <CountdownCard nowMs={effectiveNowMs} deadlineUtcMs={activeParseResult.deadlineUtcMs} />
+          {locationPickArmed ? (
+            <div className="border-cyan-300/45 text-cyan-50 absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-md border bg-black/75 px-3 py-1 text-xs shadow-neon">
+              pick on map armed: click map/globe to set location
+            </div>
+          ) : null}
 
-            <StatsStrip
-              solarLongitude={solarLongitude}
-              speedDegPerHour={lineSpeed}
-              useApparentSolar={effectiveUseApparentSolar}
-              deltaMinutesFromLocation={distance?.deltaMinutes}
-              kmFromLocation={distance?.distanceKm}
-            />
+          {unwindEligible ? (
+            <div
+              className="border-cyan-300/35 absolute bottom-20 left-3 z-20 rounded-md border bg-black/65 px-2 py-2 text-[11px]"
+              data-testid="unwind-controls"
+            >
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className={`btn-ghost px-2 py-1 text-[11px] ${unwindActive ? 'border-neon/70 text-neon' : ''}`}
+                  data-testid="unwind-toggle"
+                  onClick={toggleUnwind}
+                >
+                  {unwindActive ? 'stop unwind' : 'unwind'}
+                </button>
+                {UNWIND_SPEEDS.map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    className={`btn-ghost px-2 py-1 text-[11px] ${unwindSpeed === speed ? 'border-cyan-300/70 text-cyan-50' : ''}`}
+                    onClick={() => setUnwindSpeedTracked(speed)}
+                  >
+                    x{speed}
+                  </button>
+                ))}
+              </div>
+              <p className="text-cyan-100/75 mt-1">
+                {unwindActive ? 'unwind active' : 'unwind ready'} · cycles {unwindCyclesLeft.toFixed(2)} /{' '}
+                {unwindTotalCycles.toFixed(2)}
+              </p>
+              <p className="text-cyan-100/65">sim {unwindPreviewUtcLabel}</p>
+            </div>
+          ) : null}
 
-            <DistanceBox
-              location={effectiveLocation}
-              deltaMinutes={distance?.deltaMinutes}
-              deltaKm={distance?.distanceKm}
-            />
+          {remainingMs <= 60 * 60_000 && remainingMs > 0 ? (
+            <div className="pointer-events-none absolute bottom-3 right-24 rounded-md border border-amber-300/45 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-100">
+              <span className="inline-flex items-center gap-1">
+                <Sparkles size={13} />
+                deadline pressure rising
+              </span>
+            </div>
+          ) : null}
+        </div>
 
-            <SettingsDrawer
-              useApparentSolar={effectiveUseApparentSolar}
-              setUseApparentSolar={(value) => {
-                if (!demoOverridesEnabled) {
-                  setUseApparentSolar(value)
-                }
-              }}
-              useTimezonePolygons={effectiveUseTimezonePolygonsMode}
-              setUseTimezonePolygons={(value) => {
-                if (!demoOverridesEnabled) {
-                  setUseTimezonePolygons(value)
-                }
-              }}
-              brightDayLighting={effectiveBrightDayLighting}
-              setBrightDayLighting={(value) => {
-                if (!demoOverridesEnabled) {
-                  setBrightDayLighting(value)
-                }
-              }}
-              timezonePolygonStatus={timezonePolygonStatus}
-              civilGlowMinutes={civilGlowMinutes}
-              setCivilGlowMinutes={setCivilGlowMinutes}
-              alertThresholdMinutes={alertThresholdMinutes}
-              setAlertThresholds={setAlertThresholds}
-              enableCrossingAlerts={enableCrossingAlerts}
-              setEnableCrossingAlerts={setEnableCrossingAlerts}
-              enableBrowserNotifications={enableBrowserNotifications}
-              setEnableBrowserNotifications={setEnableBrowserNotifications}
-              reducedMotion={effectiveReducedMotion}
-              setReducedMotion={(value) => {
-                if (!demoOverridesEnabled) {
-                  setReducedMotion(value)
-                }
-              }}
+        {deadlineDrawerOpen ? (
+          <div className="absolute inset-0 z-40">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/45"
+              aria-label="close deadline drawer backdrop"
+              onClick={closeDeadlineDrawer}
             />
+            <aside
+              className="border-cyan-300/40 text-cyan-100 bg-black/92 absolute right-2 top-2 h-[calc(100%-1rem)] w-[min(420px,92vw)] overflow-auto rounded-xl border p-3 shadow-neon"
+              data-testid="deadline-drawer"
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-cyan-50 font-mono text-sm tracking-[0.12em]">deadline drawer</h2>
+                <button type="button" className="btn-ghost px-2 py-1" onClick={closeDeadlineDrawer}>
+                  <X size={14} />
+                </button>
+              </div>
+
+              <section className="border-cyan-300/30 rounded-md border bg-black/35 p-2">
+                <p className="text-cyan-200/75 text-[10px] uppercase tracking-[0.14em]">slots</p>
+                <div className="mt-1 flex gap-2">
+                  <select
+                    className="border-cyan-400/35 text-cyan-50 h-10 flex-1 rounded-md border bg-black/40 px-2 font-mono"
+                    value={slotsState.activeId}
+                    onChange={(event) => switchSlot(event.target.value)}
+                  >
+                    {slotsState.slots.map((slot) => (
+                      <option key={slot.id} value={slot.id}>
+                        {slot.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1"
+                    onClick={addNewSlot}
+                    aria-label="new deadline slot"
+                  >
+                    <Plus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1"
+                    onClick={duplicateActiveSlot}
+                    aria-label="duplicate deadline slot"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1"
+                    onClick={toggleActiveLock}
+                    aria-label="toggle deadline lock"
+                  >
+                    {activeSlot?.locked ? <Unlock size={14} /> : <Lock size={14} />}
+                  </button>
+                </div>
+                <input
+                  className="border-cyan-400/35 text-cyan-50 mt-2 h-10 w-full rounded-md border bg-black/40 px-2 font-mono"
+                  defaultValue={activeSlot?.name ?? ''}
+                  key={activeSlot?.id ?? 'no-slot'}
+                  onBlur={(event) => renameActiveSlot(event.target.value)}
+                  aria-label="rename active deadline slot"
+                />
+
+                {deleteConfirmText === '' ? (
+                  <button
+                    type="button"
+                    className="btn-ghost mt-2 inline-flex items-center gap-1 px-2 py-1 text-rose-200"
+                    onClick={() => setDeleteConfirmText('pending')}
+                  >
+                    <Trash2 size={14} />
+                    delete
+                  </button>
+                ) : (
+                  <div className="mt-2 grid gap-2">
+                    <p className="text-[11px] text-rose-200/85">type delete to confirm removal</p>
+                    <input
+                      className="h-10 rounded-md border border-rose-300/45 bg-black/40 px-2"
+                      value={deleteConfirmText === 'pending' ? '' : deleteConfirmText}
+                      onChange={(event) => setDeleteConfirmText(event.target.value)}
+                      placeholder="delete"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-rose-200"
+                        onClick={() => {
+                          if (deleteConfirmText === 'delete') {
+                            deleteActiveSlot()
+                            setDeleteConfirmText('')
+                          }
+                        }}
+                      >
+                        confirm
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1"
+                        onClick={() => setDeleteConfirmText('')}
+                      >
+                        cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <section className="border-cyan-300/30 mt-2 rounded-md border bg-black/35 p-2">
+                <p className="text-cyan-200/75 text-[10px] uppercase tracking-[0.14em]">deadline editor</p>
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1 text-xs">
+                    <span>date</span>
+                    <input
+                      className="border-cyan-400/35 h-10 rounded-md border bg-black/40 px-2 font-mono"
+                      type="date"
+                      value={draftDeadline.date}
+                      onChange={(event) => updateDraftField({ date: event.target.value })}
+                      disabled={Boolean(activeSlot?.locked)}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span>time</span>
+                    <input
+                      className="border-cyan-400/35 h-10 rounded-md border bg-black/40 px-2 font-mono"
+                      type="time"
+                      value={draftDeadline.time}
+                      onChange={(event) => updateDraftField({ time: event.target.value })}
+                      disabled={Boolean(activeSlot?.locked)}
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    onClick={() => quickShiftDraft({ minutes: -15 })}
+                  >
+                    -15m
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-neon px-2 py-1 text-[11px]"
+                    onClick={() => quickShiftDraft({ minutes: 15 })}
+                  >
+                    +15m
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-neon px-2 py-1 text-[11px]"
+                    onClick={() => quickShiftDraft({ hours: 1 })}
+                  >
+                    +1h
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-neon px-2 py-1 text-[11px]"
+                    onClick={() => quickShiftDraft({ days: 1 })}
+                  >
+                    +1d
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    onClick={applyNow24hDraft}
+                  >
+                    now+24h
+                  </button>
+                </div>
+                <label className="mt-2 grid gap-1 text-xs">
+                  <span>timezone</span>
+                  <input
+                    className="border-cyan-400/35 h-10 rounded-md border bg-black/40 px-2 font-mono"
+                    value={timezoneSearch}
+                    onChange={(event) => setTimezoneSearch(event.target.value)}
+                    placeholder="type city / iana / utc"
+                  />
+                  <select
+                    className="border-cyan-400/35 h-10 rounded-md border bg-black/40 px-2 font-mono"
+                    value={draftDeadline.zone}
+                    onChange={(event) =>
+                      updateDraftField({ zone: normalizeDeadlineZone(event.target.value) })
+                    }
+                    disabled={Boolean(activeSlot?.locked)}
+                  >
+                    {timezoneMatches.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    onClick={() =>
+                      updateDraftField({ zone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' })
+                    }
+                  >
+                    local
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    onClick={() => updateDraftField({ zone: 'UTC' })}
+                  >
+                    utc
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    onClick={() => updateDraftField({ zone: AOE_IANA_ZONE })}
+                  >
+                    aoe
+                  </button>
+                </div>
+                <p className="text-cyan-100/72 mt-2 text-[11px]">
+                  safe edit mode is active; map updates only after apply.
+                </p>
+
+                {draftDirty ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-neon px-2 py-1 text-[11px]"
+                      onClick={applyDraftToActive}
+                      disabled={Boolean(activeSlot?.locked) || !draftParseResult.valid}
+                      aria-label="apply draft deadline"
+                    >
+                      apply
+                    </button>
+                    <button type="button" className="btn-ghost px-2 py-1 text-[11px]" onClick={discardDraft}>
+                      discard
+                    </button>
+                    <span className="text-[11px] text-amber-100/90">
+                      changed: {changedFields.join(', ') || 'unknown'}
+                    </span>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="border-cyan-300/30 mt-2 rounded-md border bg-black/35 p-2">
+                <p className="text-cyan-200/75 text-[10px] uppercase tracking-[0.14em]">location</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="btn-neon px-2 py-1 text-[11px]"
+                    onClick={requestBrowserLocation}
+                  >
+                    <MapPin size={13} />
+                    use location
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-ghost px-2 py-1 text-[11px] ${locationPickArmed ? 'border-neon/70 text-neon' : ''}`}
+                    onClick={() => {
+                      setLocationPickArmed((value) => !value)
+                      setDeadlineDrawerOpen(false)
+                    }}
+                  >
+                    pick on map
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    onClick={() => setLocation(null)}
+                  >
+                    clear
+                  </button>
+                </div>
+                <label className="mt-2 grid gap-1 text-xs">
+                  <span>city search</span>
+                  <input
+                    className="border-cyan-400/35 h-10 rounded-md border bg-black/40 px-2 font-mono"
+                    value={cityQuery}
+                    onChange={(event) => setCityQuery(event.target.value)}
+                    placeholder="search city"
+                  />
+                </label>
+                {cityResults.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {cityResults.slice(0, 6).map((city) => (
+                      <button
+                        type="button"
+                        key={`${city.name}-${city.country}-${city.lat}-${city.lon}`}
+                        className="btn-ghost px-2 py-1 text-[11px]"
+                        onClick={() => {
+                          setLocation({
+                            lat: city.lat,
+                            lon: city.lon,
+                            label: `${city.name}, ${city.country}`
+                          })
+                          updateDraftField({ zone: city.zone })
+                        }}
+                      >
+                        {city.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="border-cyan-300/30 mt-2 rounded-md border bg-black/35 p-2">
+                <button
+                  type="button"
+                  className="btn-ghost w-full px-2 py-1 text-left text-[11px]"
+                  onClick={() => setAdvancedOpen((value) => !value)}
+                >
+                  {advancedOpen ? 'hide advanced' : 'show advanced'}
+                </button>
+                {advancedOpen ? (
+                  <div className="mt-2 grid gap-2">
+                    <SwitchPill
+                      label="apparent solar"
+                      checked={effectiveUseApparentSolar}
+                      onCheckedChange={(value) => {
+                        if (!demoOverridesEnabled) {
+                          setUseApparentSolar(value)
+                        }
+                      }}
+                    />
+                    <SwitchPill
+                      label="bright daytime lighting"
+                      checked={effectiveBrightDayLighting}
+                      onCheckedChange={(value) => {
+                        if (!demoOverridesEnabled) {
+                          setBrightDayLighting(value)
+                        }
+                      }}
+                    />
+                    <SwitchPill
+                      label="accuracy mode (timezone polygons)"
+                      checked={effectiveUseTimezonePolygonsMode}
+                      onCheckedChange={(value) => {
+                        if (!demoOverridesEnabled) {
+                          setUseTimezonePolygons(value)
+                        }
+                      }}
+                    />
+                    <p className="text-cyan-100/72 text-[11px]">timezone polygons: {timezonePolygonStatus}</p>
+                    <p className="text-cyan-100/72 text-[11px]">
+                      dst ambiguity:{' '}
+                      {draftParseResult.ambiguous ? 'ambiguous (choose earlier/later)' : 'clear'}
+                    </p>
+                    {draftParseResult.ambiguous ? (
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          className={`btn-ghost px-2 py-1 text-[11px] ${draftDeadline.ambiguousPreference === 'earlier' ? 'border-neon/70 text-neon' : ''}`}
+                          onClick={() => updateDraftField({ ambiguousPreference: 'earlier' })}
+                        >
+                          earlier
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn-ghost px-2 py-1 text-[11px] ${draftDeadline.ambiguousPreference === 'later' ? 'border-neon/70 text-neon' : ''}`}
+                          onClick={() => updateDraftField({ ambiguousPreference: 'later' })}
+                        >
+                          later
+                        </button>
+                      </div>
+                    ) : null}
+                    <p className="text-cyan-100/72 text-[11px]">alert thresholds</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[1440, 360, 60, 15, 5, 1].map((threshold) => (
+                        <button
+                          key={threshold}
+                          type="button"
+                          className={`btn-ghost px-2 py-1 text-[11px] ${alertThresholdMinutes.includes(threshold) ? 'border-neon/70 text-neon' : ''}`}
+                          onClick={() => {
+                            if (alertThresholdMinutes.includes(threshold)) {
+                              setAlertThresholds(alertThresholdMinutes.filter((value) => value !== threshold))
+                            } else {
+                              setAlertThresholds([...alertThresholdMinutes, threshold].sort((a, b) => b - a))
+                            }
+                          }}
+                        >
+                          {threshold >= 60 ? `${threshold / 60}h` : `${threshold}m`}
+                        </button>
+                      ))}
+                    </div>
+                    <SwitchPill
+                      label="landmark crossing alerts"
+                      checked={enableCrossingAlerts}
+                      onCheckedChange={setEnableCrossingAlerts}
+                    />
+                    <SwitchPill
+                      label="browser notifications"
+                      checked={enableBrowserNotifications}
+                      onCheckedChange={async (shouldEnable) => {
+                        if (shouldEnable && 'Notification' in window) {
+                          const permission = await Notification.requestPermission()
+                          setEnableBrowserNotifications(permission === 'granted')
+                          return
+                        }
+                        setEnableBrowserNotifications(false)
+                      }}
+                    />
+                    <SwitchPill
+                      label="reduced motion"
+                      checked={effectiveReducedMotion}
+                      onCheckedChange={(value) => {
+                        if (!demoOverridesEnabled) {
+                          setReducedMotion(value)
+                        }
+                      }}
+                    />
+                  </div>
+                ) : null}
+              </section>
+            </aside>
           </div>
-        </section>
-      </div>
+        ) : null}
+
+        {infoDrawerOpen ? (
+          <aside
+            className="border-cyan-300/40 text-cyan-100 bg-black/88 absolute bottom-3 left-3 z-30 w-[min(420px,88vw)] rounded-xl border p-3 shadow-neon"
+            data-testid="info-drawer"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-cyan-50 font-mono text-sm">info</h2>
+              <button type="button" className="btn-ghost px-2 py-1" onClick={() => setInfoDrawerOpen(false)}>
+                <X size={14} />
+              </button>
+            </div>
+            <p className="text-[11px]">
+              distance:{' '}
+              {effectiveLocation && distance
+                ? `${effectiveLocation.label} ${distance.deltaMinutes > 0 ? 'ahead' : 'behind'} ${formatSignedMinutes(Math.abs(distance.deltaMinutes))} · ~${distance.distanceKm.toFixed(0)}km`
+                : 'set location to compare'}
+            </p>
+            <details className="mt-2">
+              <summary className="text-cyan-100/86 cursor-pointer">stats</summary>
+              <p className="mt-1 text-[11px]">
+                solar lon {solarLongitude.toFixed(1)}° · speed {lineSpeed.toFixed(2)}°/h · mode{' '}
+                {effectiveUseApparentSolar ? 'apparent' : 'mean'}
+              </p>
+            </details>
+            <details className="mt-2" open>
+              <summary className="text-cyan-100/86 cursor-pointer">up next</summary>
+              <ul className="mt-1 grid gap-1 text-[11px]">
+                {recentEvents.length > 0 ? (
+                  recentEvents.map((event) => <li key={event.id}>- {event.label}</li>)
+                ) : (
+                  <li>- no crossings in horizon</li>
+                )}
+              </ul>
+            </details>
+            {debugMode ? (
+              <details className="mt-2" open>
+                <summary className="text-cyan-100/86 cursor-pointer">debug</summary>
+                <p className="mt-1 text-[11px]">
+                  fps {debugPerf.fps} · drift {debugPerf.renderDriftMs.toFixed(2)}ms · terminator{' '}
+                  {debugPerf.terminatorComputeMs.toFixed(2)}ms
+                </p>
+                <button
+                  type="button"
+                  className="btn-ghost mt-1 inline-flex items-center gap-1 px-2 py-1 text-[11px]"
+                  onClick={() => setDebugMode(false)}
+                >
+                  <Bug size={13} />
+                  close debug overlay
+                </button>
+              </details>
+            ) : null}
+          </aside>
+        ) : null}
+      </section>
 
       <ToastStack
         toasts={toasts}

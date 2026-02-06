@@ -53,6 +53,19 @@ type Map2DViewProps = {
   location: LocationPoint | null
   landmarks: Landmark[]
   reducedMotion: boolean
+  baseMapStyle?: 'deadline-dark' | 'osm-light' | 'osm-dark'
+  initialViewState?: Partial<ViewState>
+  onViewStateChange?: (state: {
+    zoom: number
+    offsetX: number
+    offsetY: number
+    centerLon: number
+    centerLat: number
+  }) => void
+  onMapClick?: (coords: { lat: number; lon: number }) => void
+  showResetButton?: boolean
+  showInlineLegend?: boolean
+  showStatusOverlay?: boolean
   onPerf?: (metrics: { terminatorComputeMs: number }) => void
 }
 
@@ -177,14 +190,23 @@ export function Map2DView(props: Map2DViewProps) {
     location,
     landmarks,
     reducedMotion,
+    baseMapStyle = 'deadline-dark',
+    initialViewState,
+    onViewStateChange,
+    onMapClick,
+    showResetButton = true,
+    showInlineLegend = true,
+    showStatusOverlay = true,
     onPerf
   } = props
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
+  const dragMovedRef = useRef(false)
   const animationRef = useRef<number | null>(null)
   const lastPerfPushRef = useRef(0)
+  const initialViewAppliedRef = useRef(false)
   const viewRef = useRef<ViewState>({ zoom: 1, offsetX: 0, offsetY: 0 })
 
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
@@ -338,6 +360,41 @@ export function Map2DView(props: Map2DViewProps) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!initialViewState || !baseProjectionMetrics || initialViewAppliedRef.current) {
+      return
+    }
+
+    const nextZoom = clamp(initialViewState.zoom ?? 1, 1, 8)
+    const worldWidth = worldWidthAtZoom(nextZoom)
+    setView({
+      zoom: nextZoom,
+      offsetX: wrapOffsetX(initialViewState.offsetX ?? 0, worldWidth),
+      offsetY: clamp(initialViewState.offsetY ?? 0, -size.height * 0.4, size.height * 0.4)
+    })
+    initialViewAppliedRef.current = true
+  }, [baseProjectionMetrics, initialViewState, size.height, worldWidthAtZoom])
+
+  useEffect(() => {
+    if (!onViewStateChange || !size.width || !size.height) {
+      return
+    }
+
+    const projection = buildProjection(view)
+    const center = projection?.invert?.([size.width / 2, size.height / 2])
+    if (!center) {
+      return
+    }
+
+    onViewStateChange({
+      zoom: view.zoom,
+      offsetX: view.offsetX,
+      offsetY: view.offsetY,
+      centerLon: wrap180(center[0]),
+      centerLat: center[1]
+    })
+  }, [buildProjection, onViewStateChange, size.height, size.width, view])
+
   const civilSampleTime = useMemo(() => new Date(Math.floor(nowTime.getTime() / 1000) * 1000), [nowTime])
 
   const dayNightSampleTime = useMemo(
@@ -447,6 +504,9 @@ export function Map2DView(props: Map2DViewProps) {
         const worldWidth = worldWidthAtZoom(currentView.zoom)
         const dx = event.clientX - drag.startX
         const dy = event.clientY - drag.startY
+        if (!dragMovedRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+          dragMovedRef.current = true
+        }
 
         setView({
           zoom: currentView.zoom,
@@ -461,21 +521,37 @@ export function Map2DView(props: Map2DViewProps) {
       }
     }
 
-    const stopDragging = (pointerId: number | null) => {
+    const stopDragging = (event: PointerEvent | null) => {
       if (!dragRef.current) {
         return
       }
 
-      if (pointerId !== null && dragRef.current.pointerId !== pointerId) {
+      if (event !== null && dragRef.current.pointerId !== event.pointerId) {
         return
+      }
+
+      if (event && !dragMovedRef.current && onMapClick) {
+        const projection = buildProjection(viewRef.current)
+        const canvas = canvasRef.current
+        if (projection && projection.invert && canvas) {
+          const rect = canvas.getBoundingClientRect()
+          const x = event.clientX - rect.left
+          const y = event.clientY - rect.top
+          if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) {
+            const point = projection.invert([x, y])
+            if (point) {
+              onMapClick({ lon: wrap180(point[0]), lat: point[1] })
+            }
+          }
+        }
       }
 
       dragRef.current = null
       setDragging(false)
     }
 
-    const onPointerUp = (event: PointerEvent) => stopDragging(event.pointerId)
-    const onPointerCancel = (event: PointerEvent) => stopDragging(event.pointerId)
+    const onPointerUp = (event: PointerEvent) => stopDragging(event)
+    const onPointerCancel = (event: PointerEvent) => stopDragging(event)
     const onBlur = () => stopDragging(null)
 
     window.addEventListener('pointermove', onPointerMove)
@@ -489,7 +565,7 @@ export function Map2DView(props: Map2DViewProps) {
       window.removeEventListener('pointercancel', onPointerCancel)
       window.removeEventListener('blur', onBlur)
     }
-  }, [dragging, handleHover, size.height, worldWidthAtZoom])
+  }, [buildProjection, dragging, handleHover, onMapClick, size.height, worldWidthAtZoom])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -534,7 +610,41 @@ export function Map2DView(props: Map2DViewProps) {
       }
     }
 
-    if (brightDayLighting) {
+    const theme =
+      baseMapStyle === 'osm-light'
+        ? {
+            backgroundTop: '#cad8eb',
+            backgroundBottom: '#a9bfd8',
+            graticule: 'rgba(79, 120, 168, 0.2)',
+            landFill: '#dce6d9',
+            landStroke: 'rgba(87, 125, 156, 0.3)',
+            nightShade: 'rgba(18, 29, 45, 0.32)',
+            dayGlowA: 'rgba(255, 252, 208, 0.24)',
+            dayGlowB: 'rgba(175, 220, 255, 0.2)'
+          }
+        : baseMapStyle === 'osm-dark'
+          ? {
+              backgroundTop: '#101721',
+              backgroundBottom: '#0b1019',
+              graticule: 'rgba(103, 143, 186, 0.18)',
+              landFill: '#243248',
+              landStroke: 'rgba(112, 160, 205, 0.28)',
+              nightShade: 'rgba(0, 0, 0, 0.46)',
+              dayGlowA: 'rgba(239, 250, 206, 0.2)',
+              dayGlowB: 'rgba(112, 174, 231, 0.18)'
+            }
+          : {
+              backgroundTop: '#071129',
+              backgroundBottom: '#04060f',
+              graticule: 'rgba(105, 191, 255, 0.12)',
+              landFill: brightDayLighting ? '#27527e' : '#0f1a34',
+              landStroke: brightDayLighting ? 'rgba(162, 222, 255, 0.26)' : 'rgba(119, 173, 255, 0.25)',
+              nightShade: brightDayLighting ? 'rgba(4, 8, 16, 0.52)' : 'rgba(2, 4, 10, 0.5)',
+              dayGlowA: 'rgba(255, 241, 162, 0.34)',
+              dayGlowB: 'rgba(154, 212, 255, 0.28)'
+            }
+
+    if (brightDayLighting || baseMapStyle !== 'deadline-dark') {
       ctx.fillStyle = '#071129'
       ctx.fillRect(0, 0, size.width, size.height)
 
@@ -554,8 +664,8 @@ export function Map2DView(props: Map2DViewProps) {
           center[1],
           Math.max(size.width, size.height) * 0.75
         )
-        glow.addColorStop(0, 'rgba(255, 241, 162, 0.34)')
-        glow.addColorStop(0.28, 'rgba(154, 212, 255, 0.28)')
+        glow.addColorStop(0, theme.dayGlowA)
+        glow.addColorStop(0.28, theme.dayGlowB)
         glow.addColorStop(0.58, 'rgba(49, 109, 178, 0.20)')
         glow.addColorStop(1, 'rgba(9, 18, 39, 0)')
 
@@ -570,15 +680,15 @@ export function Map2DView(props: Map2DViewProps) {
       ctx.fillRect(0, 0, size.width, size.height)
     } else {
       const gradient = ctx.createLinearGradient(0, 0, size.width, size.height)
-      gradient.addColorStop(0, '#06101f')
-      gradient.addColorStop(1, '#04060f')
+      gradient.addColorStop(0, theme.backgroundTop)
+      gradient.addColorStop(1, theme.backgroundBottom)
       ctx.fillStyle = gradient
       ctx.fillRect(0, 0, size.width, size.height)
     }
 
     drawWrapped(() => {
       const graticule = geoGraticule10()
-      ctx.strokeStyle = 'rgba(105, 191, 255, 0.12)'
+      ctx.strokeStyle = theme.graticule
       ctx.lineWidth = 0.8
       ctx.beginPath()
       path(graticule)
@@ -670,8 +780,8 @@ export function Map2DView(props: Map2DViewProps) {
 
     if (world) {
       drawWrapped(() => {
-        ctx.fillStyle = brightDayLighting ? '#27527e' : '#0f1a34'
-        ctx.strokeStyle = brightDayLighting ? 'rgba(162, 222, 255, 0.26)' : 'rgba(119, 173, 255, 0.25)'
+        ctx.fillStyle = theme.landFill
+        ctx.strokeStyle = theme.landStroke
         ctx.lineWidth = 0.7
         ctx.beginPath()
         path(world)
@@ -692,7 +802,7 @@ export function Map2DView(props: Map2DViewProps) {
           coordinates: [nightPoints]
         }
 
-        ctx.fillStyle = brightDayLighting ? 'rgba(4, 8, 16, 0.52)' : 'rgba(2, 4, 10, 0.5)'
+        ctx.fillStyle = theme.nightShade
         ctx.beginPath()
         path(nightPolygon)
         ctx.fill()
@@ -858,6 +968,7 @@ export function Map2DView(props: Map2DViewProps) {
     useTimezonePolygons,
     view.zoom,
     world,
+    baseMapStyle,
     worldWidthAtZoom,
     onPerf
   ])
@@ -885,6 +996,7 @@ export function Map2DView(props: Map2DViewProps) {
           baseOffsetY: currentView.offsetY,
           pointerId: event.pointerId
         }
+        dragMovedRef.current = false
         setDragging(true)
       }}
       onPointerMove={(event) => {
@@ -962,27 +1074,33 @@ export function Map2DView(props: Map2DViewProps) {
         <span>{view.zoom.toFixed(2)}x</span>
       </div>
 
-      <div className="text-cyan-100/76 pointer-events-none absolute bottom-7 right-2 rounded bg-black/45 px-2 py-1 text-[10px]">
-        mint = solar now · amber dash = solar at deadline · cyan curve = terminator
-      </div>
+      {showInlineLegend ? (
+        <div className="text-cyan-100/76 pointer-events-none absolute bottom-7 right-2 rounded bg-black/45 px-2 py-1 text-[10px]">
+          mint = solar now · amber dash = solar at deadline · cyan curve = terminator
+        </div>
+      ) : null}
 
-      <div className="bg-black/42 text-cyan-100/74 pointer-events-none absolute left-2 top-2 rounded px-2 py-1 text-[10px]">
-        target {formatClock(targetMinutesOfDay)} in {deadlineZoneLabel} ({deadlineOffsetLabel})
-        <br />
-        solar now {nowSolarLongitude.toFixed(1)}°
-        {deadlineSolarLongitude !== null ? ` · at deadline ${deadlineSolarLongitude.toFixed(1)}°` : ''}
-      </div>
+      {showStatusOverlay ? (
+        <div className="bg-black/42 text-cyan-100/74 pointer-events-none absolute left-2 top-2 rounded px-2 py-1 text-[10px]">
+          target {formatClock(targetMinutesOfDay)} in {deadlineZoneLabel} ({deadlineOffsetLabel})
+          <br />
+          solar now {nowSolarLongitude.toFixed(1)}°
+          {deadlineSolarLongitude !== null ? ` · at deadline ${deadlineSolarLongitude.toFixed(1)}°` : ''}
+        </div>
+      ) : null}
 
-      <button
-        type="button"
-        className="btn-ghost absolute right-2 top-2 px-2 py-1 text-[11px]"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={() => {
-          animateToView(defaultView(1))
-        }}
-      >
-        reset view
-      </button>
+      {showResetButton ? (
+        <button
+          type="button"
+          className="btn-ghost absolute right-2 top-2 px-2 py-1 text-[11px]"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => {
+            animateToView(defaultView(1))
+          }}
+        >
+          reset view
+        </button>
+      ) : null}
     </div>
   )
 }
