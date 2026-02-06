@@ -76,7 +76,9 @@ export function NearDeadlineEffects({ remainingMs, reducedMotion }: NearDeadline
   return (
     <div className="pointer-events-none absolute inset-0 z-[25] overflow-hidden">
       {stage >= 1 && !reducedMotion ? <div className={`deadline-haze stage-${stage}`} /> : null}
-      {particlesReady && particlesOptions ? <Particles id="deadline-effects" options={particlesOptions as never} /> : null}
+      {particlesReady && particlesOptions ? (
+        <Particles id="deadline-effects" options={particlesOptions as never} />
+      ) : null}
       {stage >= 3 && !reducedMotion ? <div className="deadline-glitch" /> : null}
       {!reducedMotion && shockwaveTick > 0 ? (
         <motion.div

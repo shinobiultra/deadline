@@ -22,3 +22,11 @@
 - Added debug mode (`?debug=1` / `Ctrl+Shift+D`) with layout overlays, overlap/hit-target checks, screenshot + layout JSON capture.
 - Added UI capture automation script `npm run ui:capture` producing artifacts for desktop/mobile.
 - Validation completed: lint, vitest suite, production build, playwright e2e pass.
+- Added strict quality standards:
+  - Prettier config + format check/write commands.
+  - stronger TypeScript strictness flags (`noUncheckedIndexedAccess`, `noImplicitReturns`, etc.).
+  - stricter type-aware ESLint rules.
+  - performance report script with enforced thresholds + JSON artifact output.
+- Added `prek`-based hook automation (`.pre-commit-config.yaml`) for pre-commit and pre-push gates.
+- Added docs pages for UI guide, testing/quality gates, versioning, and changelog.
+- Bumped project version to `0.2.0`.

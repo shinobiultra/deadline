@@ -17,7 +17,7 @@ export function ToastStack({ toasts, onDismiss }: ToastStackProps) {
         {toasts.map((toast) => (
           <motion.button
             key={toast.id}
-            className="pointer-events-auto rounded-lg border border-cyan-300/35 bg-panel/90 p-3 text-left text-xs text-cyan-100 shadow-neon"
+            className="border-cyan-300/35 text-cyan-100 pointer-events-auto rounded-lg border bg-panel/90 p-3 text-left text-xs shadow-neon"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}

@@ -22,6 +22,15 @@ function intersects(a: DebugEntry['rect'], b: DebugEntry['rect']) {
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y)
 }
 
+function iconIntrudesTextArea(
+  inputRect: DebugEntry['rect'],
+  iconRect: DebugEntry['rect'],
+  reservedRightPx = 42
+) {
+  const textRightEdge = inputRect.x + Math.max(0, inputRect.width - reservedRightPx)
+  return iconRect.x < textRightEdge
+}
+
 function downloadText(filename: string, content: string, type = 'application/json') {
   const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
@@ -61,21 +70,23 @@ export function DebugOverlay({ enabled, rootRef, onClose }: DebugOverlayProps) {
     for (const [aKey, bKey] of pairs) {
       const a = nextEntries.find((entry) => entry.key === aKey)
       const b = nextEntries.find((entry) => entry.key === bKey)
-      if (a && b && intersects(a.rect, b.rect)) {
+      if (a && b && intersects(a.rect, b.rect) && iconIntrudesTextArea(a.rect, b.rect)) {
         nextWarnings.push(`overlap: ${aKey} intersects ${bKey}`)
       }
     }
 
-    const interactive = Array.from(document.querySelectorAll<HTMLElement>('button,input,select,[role="switch"]'))
-      .filter((element) => {
-        const rect = element.getBoundingClientRect()
-        return rect.width > 0 && rect.height > 0
-      })
+    const interactive = Array.from(
+      document.querySelectorAll<HTMLElement>('button,input,select,[role="switch"]')
+    ).filter((element) => {
+      const rect = element.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0
+    })
 
     for (const element of interactive) {
       const rect = element.getBoundingClientRect()
       if (rect.width < 40 || rect.height < 40) {
-        const label = element.getAttribute('aria-label') || element.textContent?.trim() || element.tagName.toLowerCase()
+        const label =
+          element.getAttribute('aria-label') || element.textContent?.trim() || element.tagName.toLowerCase()
         nextWarnings.push(`small hit target: ${label} (${Math.round(rect.width)}x${Math.round(rect.height)})`)
       }
     }
@@ -141,7 +152,7 @@ export function DebugOverlay({ enabled, rootRef, onClose }: DebugOverlayProps) {
         </div>
       ))}
 
-      <div className="pointer-events-auto absolute left-2 top-2 w-[360px] max-w-[95vw] rounded-lg border border-cyan-300/45 bg-panel/95 p-3 text-xs text-cyan-50 shadow-neon">
+      <div className="border-cyan-300/45 text-cyan-50 pointer-events-auto absolute left-2 top-2 w-[360px] max-w-[95vw] rounded-lg border bg-panel/95 p-3 text-xs shadow-neon">
         <div className="mb-2 flex items-center justify-between">
           <strong>debug layout mode</strong>
           <button type="button" className="btn-ghost px-2 py-1" onClick={onClose}>
@@ -176,7 +187,7 @@ export function DebugOverlay({ enabled, rootRef, onClose }: DebugOverlayProps) {
           </button>
         </div>
 
-        <p className="text-[11px] text-cyan-100/80">warnings: {warnings.length}</p>
+        <p className="text-cyan-100/80 text-[11px]">warnings: {warnings.length}</p>
         <ul className="max-h-40 overflow-auto text-[11px] text-rose-200">
           {warnings.map((warning) => (
             <li key={warning}>- {warning}</li>

@@ -1,7 +1,7 @@
 export const EARTH_RADIUS_KM = 6371
 
 export function wrap180(value: number): number {
-  const wrapped = ((value + 180) % 360 + 360) % 360 - 180
+  const wrapped = ((((value + 180) % 360) + 360) % 360) - 180
   return wrapped === -180 ? 180 : wrapped
 }
 

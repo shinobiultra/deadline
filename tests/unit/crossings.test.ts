@@ -24,6 +24,12 @@ describe('landmark crossings', () => {
 
     expect(crossings).toHaveLength(1)
     const expected = Date.parse('2026-01-01T02:00:00Z')
-    expect(Math.abs(crossings[0].crossingMs - expected)).toBeLessThanOrEqual(1000)
+    const first = crossings[0]
+    expect(first).toBeDefined()
+    if (!first) {
+      return
+    }
+
+    expect(Math.abs(first.crossingMs - expected)).toBeLessThanOrEqual(1000)
   })
 })

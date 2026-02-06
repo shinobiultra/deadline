@@ -52,7 +52,8 @@ export function computeLandmarkCrossings(options: CrossingOptions): LandmarkCros
 
     for (let n = nMin; n <= nMax; n += 1) {
       const targetPhase = landmark.lon + n * 360
-      const atStart = solarPhaseDegrees(new Date(rangeStartMs), targetMinutesOfDay, apparentSolar) - targetPhase
+      const atStart =
+        solarPhaseDegrees(new Date(rangeStartMs), targetMinutesOfDay, apparentSolar) - targetPhase
       const atEnd = solarPhaseDegrees(new Date(rangeEndMs), targetMinutesOfDay, apparentSolar) - targetPhase
 
       if (atStart === 0) {

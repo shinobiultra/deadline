@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { geoEquirectangular, geoGraticule10, geoPath } from 'd3-geo'
+import { geoEquirectangular, geoGraticule10, geoPath, type GeoProjection } from 'd3-geo'
 import { feature } from 'topojson-client'
 import type { FeatureCollection, Geometry, LineString, Polygon } from 'geojson'
 import { buildCivilBands } from '@/features/civil/civilBands'
 import { civilIntensityForZone, type TimezonePolygonFeature } from '@/features/civil/timezonePolygons'
 import type { LocationPoint } from '@/features/deadline/types'
+import type { Landmark } from '@/features/landmarks/types'
 import {
   buildNightPolygon,
   buildTerminatorPolyline,
-  solarDeadlineLongitude
+  solarDeadlineLongitude,
+  subsolarLatitude,
+  subsolarLongitude,
+  utcMinutesOfDay
 } from '@/features/solar/solarMath'
 import { clamp, wrap180 } from '@/lib/geo'
 import { useElementSize } from '@/lib/useElementSize'
-import type { Landmark } from '@/features/landmarks/types'
 
 type GeoFeatureCollection = FeatureCollection<Geometry>
 
@@ -22,14 +25,25 @@ type ViewState = {
   offsetY: number
 }
 
+type HoverState = {
+  x: number
+  y: number
+  readout: string
+  detail: string
+  landmarkId?: string
+}
+
 type Map2DViewProps = {
   nowTime: Date
   displayTime: Date
   deadlineTime: Date | null
   targetMinutesOfDay: number
+  deadlineZoneLabel: string
+  deadlineOffsetMinutes?: number
   showTimezones: boolean
   showSolarTime: boolean
   showDayNight: boolean
+  brightDayLighting: boolean
   showLandmarks: boolean
   useApparentSolar: boolean
   useTimezonePolygons: boolean
@@ -38,6 +52,14 @@ type Map2DViewProps = {
   location: LocationPoint | null
   landmarks: Landmark[]
   reducedMotion: boolean
+}
+
+type DragState = {
+  pointerId: number
+  startX: number
+  startY: number
+  baseOffsetX: number
+  baseOffsetY: number
 }
 
 function segmentBand(start: number, end: number): Array<{ start: number; end: number }> {
@@ -55,15 +77,86 @@ function easeOutCubic(value: number) {
   return 1 - (1 - value) ** 3
 }
 
+function wrapOffsetX(offsetX: number, worldWidth: number): number {
+  if (!Number.isFinite(worldWidth) || worldWidth <= 0) {
+    return offsetX
+  }
+
+  const half = worldWidth / 2
+  const wrapped = ((((offsetX + half) % worldWidth) + worldWidth) % worldWidth) - half
+  return Number.isFinite(wrapped) ? wrapped : offsetX
+}
+
+function formatClock(totalMinutes: number): string {
+  const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440
+  const hour = Math.floor(normalized / 60)
+  const minute = normalized % 60
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function signedCircularMinuteDelta(targetMinutes: number, localMinutes: number): number {
+  const raw = ((((targetMinutes - localMinutes + 720) % 1440) + 1440) % 1440) - 720
+  return raw
+}
+
+function formatUtcOffsetFromHours(hours: number): string {
+  const sign = hours >= 0 ? '+' : '-'
+  const abs = Math.abs(hours)
+  return `UTC${sign}${String(abs).padStart(2, '0')}`
+}
+
+function formatUtcOffsetFromMinutes(minutes: number): string {
+  const sign = minutes >= 0 ? '+' : '-'
+  const abs = Math.abs(minutes)
+  const hour = Math.floor(abs / 60)
+  const minute = abs % 60
+  if (minute === 0) {
+    return `UTC${sign}${String(hour).padStart(2, '0')}`
+  }
+  return `UTC${sign}${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function nearestLandmark(lon: number, lat: number, landmarks: Landmark[], zoom: number): Landmark | null {
+  if (landmarks.length === 0) {
+    return null
+  }
+
+  const lonTolerance = 2.6 / Math.sqrt(Math.max(1, zoom))
+  const latTolerance = 2.2 / Math.sqrt(Math.max(1, zoom))
+
+  let best: Landmark | null = null
+  let bestDist = Number.POSITIVE_INFINITY
+
+  for (const landmark of landmarks) {
+    const dLon = wrap180(landmark.lon - lon)
+    const dLat = landmark.lat - lat
+
+    if (Math.abs(dLon) > lonTolerance || Math.abs(dLat) > latTolerance) {
+      continue
+    }
+
+    const dist = dLon * dLon + dLat * dLat
+    if (dist < bestDist) {
+      bestDist = dist
+      best = landmark
+    }
+  }
+
+  return best
+}
+
 export function Map2DView(props: Map2DViewProps) {
   const {
     nowTime,
     displayTime,
     deadlineTime,
     targetMinutesOfDay,
+    deadlineZoneLabel,
+    deadlineOffsetMinutes,
     showTimezones,
     showSolarTime,
     showDayNight,
+    brightDayLighting,
     showLandmarks,
     useApparentSolar,
     useTimezonePolygons,
@@ -76,22 +169,21 @@ export function Map2DView(props: Map2DViewProps) {
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const dragRef = useRef<{
-    startX: number
-    startY: number
-    baseOffsetX: number
-    baseOffsetY: number
-    pointerId: number
-  } | null>(null)
+  const dragRef = useRef<DragState | null>(null)
   const animationRef = useRef<number | null>(null)
+  const viewRef = useRef<ViewState>({ zoom: 1, offsetX: 0, offsetY: 0 })
 
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const [world, setWorld] = useState<GeoFeatureCollection | null>(null)
-  const [hoverReadout, setHoverReadout] = useState<string>('')
+  const [hoverState, setHoverState] = useState<HoverState | null>(null)
   const [view, setView] = useState<ViewState>({ zoom: 1, offsetX: 0, offsetY: 0 })
   const [dragging, setDragging] = useState(false)
 
   const size = useElementSize(container)
+
+  useEffect(() => {
+    viewRef.current = view
+  }, [view])
 
   useEffect(() => {
     setContainer(wrapperRef.current)
@@ -121,29 +213,40 @@ export function Map2DView(props: Map2DViewProps) {
     }
   }, [])
 
-  const buildProjection = useCallback(
-    (customView: ViewState = view) => {
-      const projection = geoEquirectangular().fitExtent(
-        [
-          [14, 10],
-          [size.width - 14, size.height - 10]
-        ],
-        { type: 'Sphere' }
-      )
+  const baseProjectionMetrics = useMemo(() => {
+    if (!size.width || !size.height) {
+      return null
+    }
 
-      const baseScale = projection.scale()
-      const [tx, ty] = projection.translate()
-      projection.scale(baseScale * customView.zoom)
-      projection.translate([tx + customView.offsetX, ty + customView.offsetY])
-      return projection
+    const projection = geoEquirectangular().fitExtent(
+      [
+        [14, 10],
+        [size.width - 14, size.height - 10]
+      ],
+      { type: 'Sphere' }
+    )
+
+    return {
+      scale: projection.scale(),
+      translate: projection.translate() as [number, number]
+    }
+  }, [size.height, size.width])
+
+  const worldWidthAtZoom = useCallback(
+    (zoom: number) => {
+      if (!baseProjectionMetrics) {
+        return 0
+      }
+
+      return 2 * Math.PI * baseProjectionMetrics.scale * zoom
     },
-    [size.height, size.width, view]
+    [baseProjectionMetrics]
   )
 
-  const defaultView = useCallback(
-    (zoom: number): ViewState => {
-      if (!size.width || !size.height) {
-        return { zoom, offsetX: 0, offsetY: 0 }
+  const buildProjection = useCallback(
+    (customView: ViewState = view): GeoProjection | null => {
+      if (!baseProjectionMetrics || !size.width || !size.height) {
+        return null
       }
 
       const projection = geoEquirectangular().fitExtent(
@@ -153,8 +256,25 @@ export function Map2DView(props: Map2DViewProps) {
         ],
         { type: 'Sphere' }
       )
-      const worldWidth = 2 * Math.PI * projection.scale() * zoom
-      const offsetX = location ? -(location.lon / 360) * worldWidth : 0
+
+      const baseScale = baseProjectionMetrics.scale
+      const [tx, ty] = baseProjectionMetrics.translate
+
+      projection.scale(baseScale * customView.zoom)
+      projection.translate([tx + customView.offsetX, ty + customView.offsetY])
+      return projection
+    },
+    [baseProjectionMetrics, size.height, size.width, view]
+  )
+
+  const defaultView = useCallback(
+    (zoom: number): ViewState => {
+      if (!baseProjectionMetrics) {
+        return { zoom, offsetX: 0, offsetY: 0 }
+      }
+
+      const worldWidth = worldWidthAtZoom(zoom)
+      const offsetX = location ? wrapOffsetX(-(location.lon / 360) * worldWidth, worldWidth) : 0
 
       return {
         zoom,
@@ -162,7 +282,7 @@ export function Map2DView(props: Map2DViewProps) {
         offsetY: 0
       }
     },
-    [location, size.height, size.width]
+    [baseProjectionMetrics, location, worldWidthAtZoom]
   )
 
   const animateToView = useCallback((nextView: ViewState) => {
@@ -172,7 +292,7 @@ export function Map2DView(props: Map2DViewProps) {
     }
 
     const start = performance.now()
-    const from = view
+    const from = viewRef.current
     const duration = 220
 
     const step = () => {
@@ -194,7 +314,7 @@ export function Map2DView(props: Map2DViewProps) {
     }
 
     animationRef.current = requestAnimationFrame(step)
-  }, [view])
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -230,9 +350,133 @@ export function Map2DView(props: Map2DViewProps) {
     return buildCivilBands(deadlineTime, targetMinutesOfDay, civilGlowMinutes)
   }, [civilGlowMinutes, deadlineTime, targetMinutesOfDay])
 
+  const handleHover = useCallback(
+    (clientX: number, clientY: number) => {
+      const projection = buildProjection(viewRef.current)
+      if (!projection || !projection.invert) {
+        setHoverState(null)
+        return
+      }
+
+      const canvas = canvasRef.current
+      if (!canvas) {
+        setHoverState(null)
+        return
+      }
+
+      const rect = canvas.getBoundingClientRect()
+      const x = clientX - rect.left
+      const y = clientY - rect.top
+
+      if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+        setHoverState(null)
+        return
+      }
+
+      const inverted = projection.invert([x, y])
+      if (!inverted) {
+        setHoverState(null)
+        return
+      }
+
+      const [lonRaw, lat] = inverted
+      const lon = wrap180(lonRaw)
+      const offsetHours = clamp(Math.round(lon / 15), -12, 14)
+      const localMinutes = utcMinutesOfDay(displayTime) + offsetHours * 60
+      const localClock = formatClock(localMinutes)
+      const deltaToTarget = signedCircularMinuteDelta(targetMinutesOfDay, localMinutes)
+      const targetClock = formatClock(targetMinutesOfDay)
+      const deltaText = `${deltaToTarget >= 0 ? '+' : '-'}${Math.abs(Math.round(deltaToTarget))}m`
+      const hoverLandmark = showLandmarks ? nearestLandmark(lon, lat, landmarks, viewRef.current.zoom) : null
+
+      if (hoverLandmark) {
+        setHoverState({
+          x,
+          y,
+          landmarkId: hoverLandmark.id,
+          readout: `cross candidate: ${hoverLandmark.name}`,
+          detail: `${hoverLandmark.lat.toFixed(2)}°, ${hoverLandmark.lon.toFixed(2)}° · target ${targetClock}`
+        })
+        return
+      }
+
+      const zoneLabel = formatUtcOffsetFromHours(offsetHours)
+
+      setHoverState({
+        x,
+        y,
+        readout: `lon ${lon.toFixed(1)}° · lat ${lat.toFixed(1)}° · ${zoneLabel}`,
+        detail: `local ${localClock} · target ${targetClock} (${deltaText}) · solar now ${nowSolarLongitude.toFixed(1)}°`
+      })
+    },
+    [buildProjection, displayTime, landmarks, nowSolarLongitude, showLandmarks, targetMinutesOfDay]
+  )
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const drag = dragRef.current
+      if (drag && event.pointerId === drag.pointerId) {
+        const currentView = viewRef.current
+        const worldWidth = worldWidthAtZoom(currentView.zoom)
+        const dx = event.clientX - drag.startX
+        const dy = event.clientY - drag.startY
+
+        setView({
+          zoom: currentView.zoom,
+          offsetX: wrapOffsetX(drag.baseOffsetX + dx, worldWidth),
+          offsetY: clamp(drag.baseOffsetY + dy, -size.height * 0.4, size.height * 0.4)
+        })
+        return
+      }
+
+      if (!dragging) {
+        handleHover(event.clientX, event.clientY)
+      }
+    }
+
+    const stopDragging = (pointerId: number | null) => {
+      if (!dragRef.current) {
+        return
+      }
+
+      if (pointerId !== null && dragRef.current.pointerId !== pointerId) {
+        return
+      }
+
+      dragRef.current = null
+      setDragging(false)
+    }
+
+    const onPointerUp = (event: PointerEvent) => stopDragging(event.pointerId)
+    const onPointerCancel = (event: PointerEvent) => stopDragging(event.pointerId)
+    const onBlur = () => stopDragging(null)
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerCancel)
+    window.addEventListener('blur', onBlur)
+
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerCancel)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [dragging, handleHover, size.height, worldWidthAtZoom])
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !size.width || !size.height) {
+      return
+    }
+
+    const projection = buildProjection()
+    if (!projection) {
+      return
+    }
+
+    const worldWidth = worldWidthAtZoom(view.zoom)
+    if (!worldWidth) {
       return
     }
 
@@ -247,20 +491,11 @@ export function Map2DView(props: Map2DViewProps) {
       return
     }
 
+    const path = geoPath(projection, ctx)
+    const wrapShifts = [-2, -1, 0, 1, 2]
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, size.width, size.height)
-
-    const gradient = ctx.createLinearGradient(0, 0, size.width, size.height)
-    gradient.addColorStop(0, '#06101f')
-    gradient.addColorStop(1, '#04060f')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, size.width, size.height)
-
-    const projection = buildProjection()
-    const worldWidth = 2 * Math.PI * projection.scale()
-    const path = geoPath(projection, ctx)
-
-    const wrapShifts = [-2, -1, 0, 1, 2]
 
     const drawWrapped = (draw: () => void) => {
       for (const shift of wrapShifts) {
@@ -269,6 +504,48 @@ export function Map2DView(props: Map2DViewProps) {
         draw()
         ctx.restore()
       }
+    }
+
+    if (brightDayLighting) {
+      ctx.fillStyle = '#071129'
+      ctx.fillRect(0, 0, size.width, size.height)
+
+      const sunLon = subsolarLongitude(displayTime, useApparentSolar)
+      const sunLat = subsolarLatitude(displayTime)
+      drawWrapped(() => {
+        const center = projection([sunLon, sunLat])
+        if (!center) {
+          return
+        }
+
+        const glow = ctx.createRadialGradient(
+          center[0],
+          center[1],
+          20,
+          center[0],
+          center[1],
+          Math.max(size.width, size.height) * 0.75
+        )
+        glow.addColorStop(0, 'rgba(255, 241, 162, 0.34)')
+        glow.addColorStop(0.28, 'rgba(154, 212, 255, 0.28)')
+        glow.addColorStop(0.58, 'rgba(49, 109, 178, 0.20)')
+        glow.addColorStop(1, 'rgba(9, 18, 39, 0)')
+
+        ctx.fillStyle = glow
+        ctx.fillRect(0, 0, size.width, size.height)
+      })
+
+      const atmospheric = ctx.createLinearGradient(0, 0, 0, size.height)
+      atmospheric.addColorStop(0, 'rgba(125, 203, 255, 0.12)')
+      atmospheric.addColorStop(1, 'rgba(0, 0, 0, 0.08)')
+      ctx.fillStyle = atmospheric
+      ctx.fillRect(0, 0, size.width, size.height)
+    } else {
+      const gradient = ctx.createLinearGradient(0, 0, size.width, size.height)
+      gradient.addColorStop(0, '#06101f')
+      gradient.addColorStop(1, '#04060f')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, size.width, size.height)
     }
 
     drawWrapped(() => {
@@ -363,41 +640,50 @@ export function Map2DView(props: Map2DViewProps) {
       }
     }
 
+    if (world) {
+      drawWrapped(() => {
+        ctx.fillStyle = brightDayLighting ? '#27527e' : '#0f1a34'
+        ctx.strokeStyle = brightDayLighting ? 'rgba(162, 222, 255, 0.26)' : 'rgba(119, 173, 255, 0.25)'
+        ctx.lineWidth = 0.7
+        ctx.beginPath()
+        path(world)
+        ctx.fill()
+        ctx.stroke()
+      })
+    }
+
     if (showDayNight) {
       drawWrapped(() => {
-        const nightPoints = buildNightPolygon(displayTime, useApparentSolar).map((point) => [point.lon, point.lat])
+        const nightPoints = buildNightPolygon(displayTime, useApparentSolar).map((point) => [
+          point.lon,
+          point.lat
+        ])
         const nightPolygon: Polygon = {
           type: 'Polygon',
           coordinates: [nightPoints]
         }
 
-        ctx.fillStyle = 'rgba(2, 4, 10, 0.5)'
+        ctx.fillStyle = brightDayLighting ? 'rgba(4, 8, 16, 0.52)' : 'rgba(2, 4, 10, 0.5)'
         ctx.beginPath()
         path(nightPolygon)
         ctx.fill()
 
         const terminatorLine: LineString = {
           type: 'LineString',
-          coordinates: buildTerminatorPolyline(displayTime, useApparentSolar).map((point) => [point.lon, point.lat])
+          coordinates: buildTerminatorPolyline(displayTime, useApparentSolar).map((point) => [
+            point.lon,
+            point.lat
+          ])
         }
 
-        ctx.strokeStyle = 'rgba(110, 231, 255, 0.8)'
-        ctx.lineWidth = 1.2
+        ctx.strokeStyle = 'rgba(110, 231, 255, 0.88)'
+        ctx.shadowColor = 'rgba(110, 231, 255, 0.4)'
+        ctx.shadowBlur = 8
+        ctx.lineWidth = 1.6
         ctx.beginPath()
         path(terminatorLine)
         ctx.stroke()
-      })
-    }
-
-    if (world) {
-      drawWrapped(() => {
-        ctx.fillStyle = '#0f1a34'
-        ctx.strokeStyle = 'rgba(119, 173, 255, 0.25)'
-        ctx.lineWidth = 0.7
-        ctx.beginPath()
-        path(world)
-        ctx.fill()
-        ctx.stroke()
+        ctx.shadowBlur = 0
       })
     }
 
@@ -412,22 +698,28 @@ export function Map2DView(props: Map2DViewProps) {
         }
 
         ctx.strokeStyle = '#7cffb2'
-        ctx.shadowColor = 'rgba(124, 255, 178, 0.8)'
-        ctx.shadowBlur = 14
-        ctx.lineWidth = 2.4
+        ctx.shadowColor = 'rgba(124, 255, 178, 0.82)'
+        ctx.shadowBlur = 16
+        ctx.lineWidth = 2.8
         ctx.beginPath()
         path(nowLine)
         ctx.stroke()
         ctx.shadowBlur = 0
 
-        const scanPhase = (nowTime.getTime() / 7000) % 1
-        const scanLat = -90 + scanPhase * 180
-        const scanXY = projection([nowSolarLongitude, scanLat])
-        if (scanXY) {
-          ctx.fillStyle = '#d7ffe9'
-          ctx.beginPath()
-          ctx.arc(scanXY[0], scanXY[1], 3.2, 0, Math.PI * 2)
-          ctx.fill()
+        if (!reducedMotion) {
+          for (let i = 0; i < 5; i += 1) {
+            const phase = (((nowTime.getTime() / 3200 + i * 0.2) % 1) + 1) % 1
+            const scanLat = -90 + phase * 180
+            const scanXY = projection([nowSolarLongitude, scanLat])
+            if (!scanXY) {
+              continue
+            }
+
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(216, 255, 234, 0.94)' : 'rgba(110, 231, 255, 0.84)'
+            ctx.beginPath()
+            ctx.arc(scanXY[0], scanXY[1], 2.2, 0, Math.PI * 2)
+            ctx.fill()
+          }
         }
 
         if (deadlineSolarLongitude !== null) {
@@ -439,9 +731,9 @@ export function Map2DView(props: Map2DViewProps) {
             ]
           }
 
-          ctx.setLineDash([8, 8])
-          ctx.strokeStyle = 'rgba(255, 198, 127, 0.7)'
-          ctx.lineWidth = 1.8
+          ctx.setLineDash([10, 8])
+          ctx.strokeStyle = 'rgba(255, 198, 127, 0.82)'
+          ctx.lineWidth = 2.1
           ctx.beginPath()
           path(deadlineLine)
           ctx.stroke()
@@ -452,14 +744,26 @@ export function Map2DView(props: Map2DViewProps) {
 
     if (showLandmarks) {
       drawWrapped(() => {
-        const toDraw = landmarks.slice(0, 30)
-        ctx.fillStyle = 'rgba(255, 170, 110, 0.75)'
-        for (const landmark of toDraw) {
+        const maxVisible = view.zoom >= 3 ? 90 : view.zoom >= 1.6 ? 45 : 24
+        for (const landmark of landmarks.slice(0, maxVisible)) {
           const xy = projection([landmark.lon, landmark.lat])
           if (!xy) {
             continue
           }
-          ctx.fillRect(xy[0] - 1.2, xy[1] - 1.2, 2.4, 2.4)
+
+          const active = landmark.id === hoverState?.landmarkId
+          ctx.fillStyle = active ? 'rgba(255, 224, 151, 0.95)' : 'rgba(255, 170, 110, 0.8)'
+          ctx.beginPath()
+          ctx.arc(xy[0], xy[1], active ? 2.9 : 1.8, 0, Math.PI * 2)
+          ctx.fill()
+
+          if (active) {
+            ctx.strokeStyle = 'rgba(255, 196, 129, 0.72)'
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.arc(xy[0], xy[1], 7.4, 0, Math.PI * 2)
+            ctx.stroke()
+          }
         }
       })
     }
@@ -476,14 +780,16 @@ export function Map2DView(props: Map2DViewProps) {
         ctx.arc(xy[0], xy[1], 4.5, 0, Math.PI * 2)
         ctx.fill()
 
-        ctx.strokeStyle = 'rgba(110, 231, 255, 0.5)'
+        const pulse = reducedMotion ? 8 : 8 + ((nowTime.getTime() / 200) % 4)
+        ctx.strokeStyle = 'rgba(110, 231, 255, 0.58)'
         ctx.lineWidth = 1
         ctx.beginPath()
-        ctx.arc(xy[0], xy[1], 8, 0, Math.PI * 2)
+        ctx.arc(xy[0], xy[1], pulse, 0, Math.PI * 2)
         ctx.stroke()
       })
     }
   }, [
+    brightDayLighting,
     buildProjection,
     civilBandsDeadline,
     civilBandsNow,
@@ -491,6 +797,7 @@ export function Map2DView(props: Map2DViewProps) {
     deadlineSolarLongitude,
     deadlineTime,
     displayTime,
+    hoverState?.landmarkId,
     landmarks,
     location,
     nowSolarLongitude,
@@ -506,117 +813,123 @@ export function Map2DView(props: Map2DViewProps) {
     timezonePolygons,
     useApparentSolar,
     useTimezonePolygons,
-    world
+    view.zoom,
+    world,
+    worldWidthAtZoom
   ])
+
+  const deadlineOffsetLabel =
+    typeof deadlineOffsetMinutes === 'number'
+      ? formatUtcOffsetFromMinutes(deadlineOffsetMinutes)
+      : 'offset unresolved'
 
   return (
     <div
-      className={`relative h-full min-h-[320px] select-none rounded-xl border border-cyan-400/20 bg-black/20 ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      className={`border-cyan-400/20 relative h-full min-h-[320px] select-none rounded-xl border bg-black/20 ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       data-testid="map2d-view"
       ref={wrapperRef}
       onPointerDown={(event) => {
+        if (event.button !== 0) {
+          return
+        }
+
+        const currentView = viewRef.current
         dragRef.current = {
           startX: event.clientX,
           startY: event.clientY,
-          baseOffsetX: view.offsetX,
-          baseOffsetY: view.offsetY,
+          baseOffsetX: currentView.offsetX,
+          baseOffsetY: currentView.offsetY,
           pointerId: event.pointerId
         }
         setDragging(true)
-        event.currentTarget.setPointerCapture(event.pointerId)
       }}
       onPointerMove={(event) => {
-        const projection = size.width && size.height ? buildProjection() : null
-
-        if (dragRef.current) {
-          const dx = event.clientX - dragRef.current.startX
-          const dy = event.clientY - dragRef.current.startY
-          setView((previous) => ({
-            ...previous,
-            offsetX: dragRef.current!.baseOffsetX + dx,
-            offsetY: dragRef.current!.baseOffsetY + dy
-          }))
-          return
-        }
-
-        if (!projection || !projection.invert) {
-          return
-        }
-
-        const canvas = canvasRef.current
-        if (!canvas) {
-          return
-        }
-
-        const rect = canvas.getBoundingClientRect()
-        const x = event.clientX - rect.left
-        const y = event.clientY - rect.top
-        const inverted = projection.invert([x, y])
-        if (!inverted) {
-          setHoverReadout('')
-          return
-        }
-
-        const [lon, lat] = inverted
-        setHoverReadout(`lon ${wrap180(lon).toFixed(1)} | lat ${lat.toFixed(1)} | solar now ${nowSolarLongitude.toFixed(1)}°`)
-      }}
-      onPointerUp={(event) => {
-        if (dragRef.current && dragRef.current.pointerId === event.pointerId) {
-          dragRef.current = null
-          setDragging(false)
-          event.currentTarget.releasePointerCapture(event.pointerId)
+        if (!dragRef.current) {
+          handleHover(event.clientX, event.clientY)
         }
       }}
-      onPointerCancel={(event) => {
-        if (dragRef.current && dragRef.current.pointerId === event.pointerId) {
-          dragRef.current = null
-          setDragging(false)
-          event.currentTarget.releasePointerCapture(event.pointerId)
+      onPointerLeave={() => {
+        if (!dragRef.current) {
+          setHoverState(null)
         }
       }}
       onWheel={(event) => {
         event.preventDefault()
+
         const rect = event.currentTarget.getBoundingClientRect()
         const px = event.clientX - rect.left
         const py = event.clientY - rect.top
 
-        const scaleDelta = Math.exp(-event.deltaY * 0.0015)
-        const nextZoom = clamp(view.zoom * scaleDelta, 1, 8)
+        setView((previous) => {
+          const scaleDelta = Math.exp(-event.deltaY * 0.0015)
+          const nextZoom = clamp(previous.zoom * scaleDelta, 1, 8)
+          if (Math.abs(nextZoom - previous.zoom) < 1e-4) {
+            return previous
+          }
 
-        if (Math.abs(nextZoom - view.zoom) < 1e-4) {
-          return
-        }
+          const ratio = nextZoom / previous.zoom
+          const worldWidth = worldWidthAtZoom(nextZoom)
 
-        const ratio = nextZoom / view.zoom
-        setView((previous) => ({
-          zoom: nextZoom,
-          offsetX: px - (px - previous.offsetX) * ratio,
-          offsetY: py - (py - previous.offsetY) * ratio
-        }))
+          return {
+            zoom: nextZoom,
+            offsetX: wrapOffsetX(px - (px - previous.offsetX) * ratio, worldWidth),
+            offsetY: clamp(py - (py - previous.offsetY) * ratio, -size.height * 0.4, size.height * 0.4)
+          }
+        })
       }}
-      onDoubleClick={() => {
-        setView((previous) => ({
-          ...previous,
-          zoom: clamp(previous.zoom * 1.35, 1, 8)
-        }))
+      onDoubleClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const px = event.clientX - rect.left
+        const py = event.clientY - rect.top
+
+        setView((previous) => {
+          const nextZoom = clamp(previous.zoom * 1.35, 1, 8)
+          const ratio = nextZoom / previous.zoom
+          const worldWidth = worldWidthAtZoom(nextZoom)
+
+          return {
+            zoom: nextZoom,
+            offsetX: wrapOffsetX(px - (px - previous.offsetX) * ratio, worldWidth),
+            offsetY: clamp(py - (py - previous.offsetY) * ratio, -size.height * 0.4, size.height * 0.4)
+          }
+        })
       }}
     >
       <canvas className="h-full w-full rounded-xl" ref={canvasRef} />
-      <div className="pointer-events-none absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] text-cyan-100/75">
-        <span>{hoverReadout || 'drag endlessly to wrap world · wheel to zoom · double click to zoom in'}</span>
+
+      {hoverState ? (
+        <div
+          className="border-cyan-300/30 text-cyan-100 pointer-events-none absolute z-20 max-w-[min(340px,86vw)] rounded-md border bg-black/65 px-2 py-1 text-[11px] shadow-neon"
+          style={{
+            left: Math.min(size.width - 250, hoverState.x + 14),
+            top: Math.min(size.height - 62, hoverState.y + 12)
+          }}
+        >
+          <p className="text-cyan-50 font-mono">{hoverState.readout}</p>
+          <p className="text-cyan-100/70">{hoverState.detail}</p>
+        </div>
+      ) : null}
+
+      <div className="text-cyan-100/75 pointer-events-none absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px]">
+        <span>
+          {hoverState?.readout ?? 'drag endlessly to wrap world · wheel to zoom · double click to zoom in'}
+        </span>
         <span>{view.zoom.toFixed(2)}x</span>
       </div>
-      <div className="pointer-events-none absolute left-2 top-2 rounded bg-black/35 px-2 py-1 text-[10px] text-cyan-100/70">
+
+      <div className="bg-black/42 text-cyan-100/74 pointer-events-none absolute left-2 top-2 rounded px-2 py-1 text-[10px]">
+        target {formatClock(targetMinutesOfDay)} in {deadlineZoneLabel} ({deadlineOffsetLabel})
+        <br />
         solar now {nowSolarLongitude.toFixed(1)}°
         {deadlineSolarLongitude !== null ? ` · at deadline ${deadlineSolarLongitude.toFixed(1)}°` : ''}
       </div>
+
       <button
         type="button"
         className="btn-ghost absolute right-2 top-2 px-2 py-1 text-[11px]"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => {
-          const next = defaultView(1)
-          animateToView(next)
+          animateToView(defaultView(1))
         }}
       >
         reset view

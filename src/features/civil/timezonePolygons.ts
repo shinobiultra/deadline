@@ -51,7 +51,11 @@ function normalizeTimezoneFeatures(collection: FeatureCollection): TimezonePolyg
   return normalized
 }
 
-export function civilMinuteDifferenceForZone(zoneId: string, time: Date, targetMinutesOfDay: number): number | null {
+export function civilMinuteDifferenceForZone(
+  zoneId: string,
+  time: Date,
+  targetMinutesOfDay: number
+): number | null {
   const local = DateTime.fromJSDate(time, { zone: zoneId })
   if (!local.isValid) {
     return null

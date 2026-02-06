@@ -2,7 +2,7 @@
 
 ## Application Code
 
-- Repository code: MIT (recommended; add LICENSE before public release).
+- Repository code: Apache-2.0 (`LICENSE`).
 
 ## Runtime Libraries
 

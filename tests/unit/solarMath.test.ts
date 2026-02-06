@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { isNightAt, solarDeadlineLongitude, solarLineSpeedDegreesPerHour, subsolarLatitude } from '@/features/solar/solarMath'
+import {
+  isNightAt,
+  solarDeadlineLongitude,
+  solarLineSpeedDegreesPerHour,
+  subsolarLatitude
+} from '@/features/solar/solarMath'
 
 describe('solar math', () => {
   test('solar line shifts near 15 degrees per hour in mean mode', () => {

@@ -1,9 +1,19 @@
 # Status
 
-- Scope: v1 core delivered with additional UX hardening and debug tooling.
-- Verification: `npm run lint`, `npm run test`, `npm run build`, `npm run test:e2e`, `npm run ui:capture` pass locally.
+- Version: `0.2.0`.
+- Scope: v1 core + UX hardening + strict quality and hook automation.
+- Verification gates:
+  - `npm run format:check`
+  - `npm run lint`
+  - `npm run typecheck`
+  - `npm run test`
+  - `npm run build`
+  - `npm run perf:report`
+  - `npm run test:e2e`
+  - `npm run ui:capture`
 - AoE: supported as `Anywhere on Earth (AoE, UTC-12)` mapped to `Etc/GMT+12`.
-- 2D map: infinite horizontal wrap, zoom/pan, reset animation, now+deadline lines.
+- 2D map: infinite horizontal wrap, zoom/pan/reset, now+deadline visualization.
 - 3D globe: `react-globe.gl` with orbit interaction and visible solar/terminator paths.
-- Debug tooling: overlap detector + screenshot/layout export is implemented.
-- Known gap: timezone polygon data itself is not bundled by default to avoid ODbL payload/attribution coupling.
+- Detail mode: MapLibre raster open-map style with zoom-out auto-return to deadLINE view.
+- Debug tooling: overlap detector + screenshot/layout export.
+- Known gap: timezone polygon data is still optional to avoid default ODbL payload coupling.

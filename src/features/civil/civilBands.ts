@@ -9,9 +9,16 @@ type CivilBand = {
   intensity: number
 }
 
-export function buildCivilBands(now: Date, targetMinutesOfDay: number, glowWindowMinutes: number): CivilBand[] {
+export function buildCivilBands(
+  now: Date,
+  targetMinutesOfDay: number,
+  glowWindowMinutes: number
+): CivilBand[] {
   const utcMinutes =
-    now.getUTCHours() * 60 + now.getUTCMinutes() + now.getUTCSeconds() / 60 + now.getUTCMilliseconds() / 60_000
+    now.getUTCHours() * 60 +
+    now.getUTCMinutes() +
+    now.getUTCSeconds() / 60 +
+    now.getUTCMilliseconds() / 60_000
   const clampedWindow = Math.max(1, glowWindowMinutes)
   const bands: CivilBand[] = []
 

@@ -1,0 +1,41 @@
+minimum_pre_commit_version: '4.0.0'
+default_stages: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: prettier-write
+        name: prettier (staged write)
+        entry: npm exec prettier --write
+        language: system
+        types_or: [javascript, jsx, ts, tsx, json, css, scss, markdown, yaml]
+      - id: eslint-fix
+        name: eslint (staged fix)
+        entry: npm exec eslint --fix --max-warnings=0
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+      - id: typecheck-strict
+        name: typecheck (strict)
+        entry: npm run typecheck
+        language: system
+        pass_filenames: false
+      - id: unit-property-tests
+        name: unit + property tests
+        entry: npm run test
+        language: system
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: e2e-suite
+        name: e2e suite
+        entry: npm run test:e2e
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: perf-report
+        name: perf report
+        entry: npm run test:perf
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

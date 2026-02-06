@@ -9,11 +9,12 @@ type StatsStripProps = {
 }
 
 export function StatsStrip(props: StatsStripProps) {
-  const { solarLongitude, speedDegPerHour, useApparentSolar, deltaMinutesFromLocation, kmFromLocation } = props
+  const { solarLongitude, speedDegPerHour, useApparentSolar, deltaMinutesFromLocation, kmFromLocation } =
+    props
 
   return (
-    <section className="rounded-xl border border-cyan-300/20 bg-black/35 p-3 text-xs text-cyan-100/80">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-200/65">stats</p>
+    <section className="border-cyan-300/20 text-cyan-100/80 rounded-xl border bg-black/35 p-3 text-xs">
+      <p className="text-cyan-200/65 text-[10px] uppercase tracking-[0.18em]">stats</p>
       <div className="mt-1 grid grid-cols-2 gap-2 md:grid-cols-4">
         <div>
           <p className="font-mono text-neon">{solarLongitude.toFixed(1)}°</p>
@@ -34,11 +35,11 @@ export function StatsStrip(props: StatsStripProps) {
         {deltaMinutesFromLocation !== undefined && kmFromLocation !== undefined ? (
           <>
             <div>
-              <p className="font-mono text-cyan-200">{formatSignedMinutes(deltaMinutesFromLocation)}</p>
+              <p className="text-cyan-200 font-mono">{formatSignedMinutes(deltaMinutesFromLocation)}</p>
               <p>from your lon</p>
             </div>
             <div>
-              <p className="font-mono text-cyan-200">~{kmFromLocation.toFixed(0)} km</p>
+              <p className="text-cyan-200 font-mono">~{kmFromLocation.toFixed(0)} km</p>
               <p>distance at lat</p>
             </div>
           </>

@@ -11,7 +11,10 @@ function fractionalYearRadians(time: Date): number {
   const start = Date.UTC(time.getUTCFullYear(), 0, 0)
   const dayOfYear = Math.floor((time.getTime() - start) / 86_400_000)
   const utcHour =
-    time.getUTCHours() + time.getUTCMinutes() / 60 + time.getUTCSeconds() / 3600 + time.getUTCMilliseconds() / 3_600_000
+    time.getUTCHours() +
+    time.getUTCMinutes() / 60 +
+    time.getUTCSeconds() / 3600 +
+    time.getUTCMilliseconds() / 3_600_000
 
   return ((2 * Math.PI) / 365) * (dayOfYear - 1 + (utcHour - 12) / 24)
 }
@@ -76,11 +79,7 @@ export function solarPhaseDegrees(time: Date, targetMinutesOfDay: number, appare
   return 15 * ((targetMinutesOfDay - utcTotalMinutes - e) / 60)
 }
 
-export function solarTerminatorLatitudeAtLongitude(
-  time: Date,
-  longitude: number,
-  apparent = false
-): number {
+export function solarTerminatorLatitudeAtLongitude(time: Date, longitude: number, apparent = false): number {
   const declination = solarDeclinationRadians(time)
   const tanDeclination = Math.tan(declination)
 
@@ -93,11 +92,7 @@ export function solarTerminatorLatitudeAtLongitude(
   return clamp(radiansToDegrees(latitude), -89.999, 89.999)
 }
 
-export function buildTerminatorPolyline(
-  time: Date,
-  apparent = false,
-  stepDegrees = 2
-): LonLatPoint[] {
+export function buildTerminatorPolyline(time: Date, apparent = false, stepDegrees = 2): LonLatPoint[] {
   const points: LonLatPoint[] = []
   for (let lon = -180; lon <= 180; lon += stepDegrees) {
     points.push({
@@ -135,19 +130,29 @@ export function buildNightPolygon(time: Date, apparent = false): LonLatPoint[] {
   return [{ lon: -180, lat: -90 }, { lon: 180, lat: -90 }, ...terminator]
 }
 
-export function solarDistanceToMeridian(lat: number, lon: number, lineLongitude: number): {
+export function solarDistanceToMeridian(
+  lat: number,
+  lon: number,
+  lineLongitude: number
+): {
   deltaLongitude: number
   deltaMinutes: number
   distanceKm: number
 } {
   const deltaLongitude = wrap180(lon - lineLongitude)
   const deltaMinutes = deltaLongitude * 4
-  const distanceKm = Math.abs(Math.cos(degreesToRadians(lat)) * degreesToRadians(deltaLongitude) * EARTH_RADIUS_KM)
+  const distanceKm = Math.abs(
+    Math.cos(degreesToRadians(lat)) * degreesToRadians(deltaLongitude) * EARTH_RADIUS_KM
+  )
 
   return { deltaLongitude, deltaMinutes, distanceKm }
 }
 
-export function solarLineSpeedDegreesPerHour(time: Date, targetMinutesOfDay: number, apparent = false): number {
+export function solarLineSpeedDegreesPerHour(
+  time: Date,
+  targetMinutesOfDay: number,
+  apparent = false
+): number {
   const a = solarPhaseDegrees(time, targetMinutesOfDay, apparent)
   const b = solarPhaseDegrees(new Date(time.getTime() + 3_600_000), targetMinutesOfDay, apparent)
   return Math.abs(b - a)

@@ -18,16 +18,21 @@ type Globe3DViewProps = {
   displayTime: Date
   deadlineTime: Date | null
   targetMinutesOfDay: number
+  targetClockLabel: string
+  deadlineZoneLabel: string
+  deadlineOffsetMinutes?: number
   showSolarTime: boolean
   showDayNight: boolean
   showLandmarks: boolean
   useApparentSolar: boolean
+  reducedMotion: boolean
   location?: LocationPoint | null
   landmarks: Array<{ id: string; name: string; lat: number; lon: number }>
 }
 
 type PathDatum = {
-  id: 'solar-now' | 'solar-deadline' | 'terminator'
+  id: 'solar-now-core' | 'solar-now-glow' | 'solar-now-beam' | 'solar-deadline' | 'terminator'
+  kind: 'solar-now' | 'solar-deadline' | 'terminator'
   points: Array<{ lat: number; lng: number; altitude?: number }>
   color: string
 }
@@ -42,13 +47,66 @@ type MarkerDatum = {
   label: string
 }
 
-function buildMeridianPoints(lng: number, altitude = 0.015) {
+type RingDatum = {
+  id: string
+  lat: number
+  lng: number
+  color: string[]
+  maxRadius: number
+  propagationSpeed: number
+  repeatPeriod: number
+}
+
+type LabelDatum = {
+  id: string
+  lat: number
+  lng: number
+  text: string
+  color: string
+  altitude: number
+  size: number
+}
+
+type ScreenPathState = {
+  now: string
+  deadline: string | null
+}
+
+function formatClock(totalMinutes: number): string {
+  const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440
+  const hour = Math.floor(normalized / 60)
+  const minute = normalized % 60
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function signedCircularMinuteDelta(targetMinutes: number, localMinutes: number): number {
+  return ((((targetMinutes - localMinutes + 720) % 1440) + 1440) % 1440) - 720
+}
+
+function buildMeridianPoints(lng: number, altitude = 0.028) {
   const points: Array<{ lat: number; lng: number; altitude?: number }> = []
-  for (let lat = -90; lat <= 90; lat += 2) {
+  for (let lat = -90; lat <= 90; lat += 1.5) {
     points.push({ lat, lng, altitude })
   }
 
   return points
+}
+
+function formatUtcOffset(minutes: number | undefined): string {
+  if (minutes === undefined) {
+    return 'offset unresolved'
+  }
+
+  const sign = minutes >= 0 ? '+' : '-'
+  const abs = Math.abs(minutes)
+  const hour = Math.floor(abs / 60)
+  const minute = abs % 60
+
+  if (minute === 0) {
+    return `UTC${sign}${String(hour).padStart(2, '0')}`
+  }
+
+  return `UTC${sign}${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
 export default function Globe3DView({
@@ -56,10 +114,14 @@ export default function Globe3DView({
   displayTime,
   deadlineTime,
   targetMinutesOfDay,
+  targetClockLabel,
+  deadlineZoneLabel,
+  deadlineOffsetMinutes,
   showSolarTime,
   showDayNight,
   showLandmarks,
   useApparentSolar,
+  reducedMotion,
   location,
   landmarks
 }: Globe3DViewProps) {
@@ -67,6 +129,9 @@ export default function Globe3DView({
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const globeRef = useRef<GlobeMethods | undefined>(undefined)
   const [countries, setCountries] = useState<Array<Feature<Geometry>>>([])
+  const [hoverReadout, setHoverReadout] = useState('')
+  const [screenPaths, setScreenPaths] = useState<ScreenPathState>({ now: '', deadline: null })
+  const [globeReady, setGlobeReady] = useState(false)
   const size = useElementSize(container)
 
   useEffect(() => {
@@ -83,7 +148,10 @@ export default function Globe3DView({
           return
         }
 
-        const worldFeatures = feature(topology, topology.objects.countries) as unknown as FeatureCollection<Geometry>
+        const worldFeatures = feature(
+          topology,
+          topology.objects.countries
+        ) as unknown as FeatureCollection<Geometry>
         setCountries(worldFeatures.features)
       })
       .catch(() => {
@@ -114,16 +182,32 @@ export default function Globe3DView({
 
     if (showSolarTime) {
       paths.push({
-        id: 'solar-now',
-        points: buildMeridianPoints(nowSolarLongitude, 0.018),
+        id: 'solar-now-glow',
+        kind: 'solar-now',
+        points: buildMeridianPoints(nowSolarLongitude, 0.03),
+        color: 'rgba(110, 231, 255, 0.52)'
+      })
+
+      paths.push({
+        id: 'solar-now-core',
+        kind: 'solar-now',
+        points: buildMeridianPoints(nowSolarLongitude, 0.036),
         color: '#7cffb2'
+      })
+
+      paths.push({
+        id: 'solar-now-beam',
+        kind: 'solar-now',
+        points: buildMeridianPoints(nowSolarLongitude, 0.11),
+        color: 'rgba(255, 124, 214, 0.64)'
       })
 
       if (deadlineSolarLongitude !== null) {
         paths.push({
           id: 'solar-deadline',
-          points: buildMeridianPoints(deadlineSolarLongitude, 0.012),
-          color: 'rgba(255, 194, 112, 0.9)'
+          kind: 'solar-deadline',
+          points: buildMeridianPoints(deadlineSolarLongitude, 0.022),
+          color: 'rgba(255, 194, 112, 0.95)'
         })
       }
     }
@@ -131,6 +215,7 @@ export default function Globe3DView({
     if (showDayNight) {
       paths.push({
         id: 'terminator',
+        kind: 'terminator',
         points: buildTerminatorPolyline(displayTime, useApparentSolar).map((point) => ({
           lat: point.lat,
           lng: point.lon,
@@ -143,6 +228,27 @@ export default function Globe3DView({
     return paths
   }, [deadlineSolarLongitude, displayTime, nowSolarLongitude, showDayNight, showSolarTime, useApparentSolar])
 
+  const ringData = useMemo<RingDatum[]>(() => {
+    if (!showSolarTime || reducedMotion) {
+      return []
+    }
+
+    const rings: RingDatum[] = []
+    for (let lat = -72; lat <= 72; lat += 18) {
+      rings.push({
+        id: `ring-${lat}`,
+        lat,
+        lng: nowSolarLongitude,
+        color: ['rgba(110, 231, 255, 0.42)', 'rgba(124, 255, 178, 0.16)', 'rgba(255, 120, 220, 0.05)'],
+        maxRadius: 3.3,
+        propagationSpeed: 0.64,
+        repeatPeriod: 1100 + Math.abs(lat) * 12
+      })
+    }
+
+    return rings
+  }, [nowSolarLongitude, reducedMotion, showSolarTime])
+
   const markerData = useMemo<MarkerDatum[]>(() => {
     const subsolarLat = subsolarLatitude(displayTime)
     const subsolarLon = subsolarLongitude(displayTime, useApparentSolar)
@@ -152,9 +258,9 @@ export default function Globe3DView({
         id: 'subsolar',
         lat: subsolarLat,
         lng: subsolarLon,
-        altitude: 0.03,
+        altitude: 0.034,
         color: '#ffe38a',
-        radius: 0.24,
+        radius: 0.23,
         label: `subsolar point (${subsolarLat.toFixed(1)}°, ${subsolarLon.toFixed(1)}°)`
       }
     ]
@@ -164,7 +270,7 @@ export default function Globe3DView({
         id: 'location',
         lat: location.lat,
         lng: location.lon,
-        altitude: 0.022,
+        altitude: 0.025,
         color: '#6ee7ff',
         radius: 0.2,
         label: `you: ${location.label}`
@@ -172,14 +278,14 @@ export default function Globe3DView({
     }
 
     if (showLandmarks) {
-      for (const landmark of landmarks.slice(0, 24)) {
+      for (const landmark of landmarks.slice(0, 30)) {
         markers.push({
           id: landmark.id,
           lat: landmark.lat,
           lng: landmark.lon,
-          altitude: 0.008,
-          color: 'rgba(255, 158, 97, 0.78)',
-          radius: 0.09,
+          altitude: 0.009,
+          color: 'rgba(255, 158, 97, 0.82)',
+          radius: 0.096,
           label: landmark.name
         })
       }
@@ -187,6 +293,34 @@ export default function Globe3DView({
 
     return markers
   }, [displayTime, landmarks, location, showLandmarks, useApparentSolar])
+
+  const labelsData = useMemo<LabelDatum[]>(() => {
+    const labels: LabelDatum[] = [
+      {
+        id: 'label-now',
+        lat: -48,
+        lng: nowSolarLongitude,
+        text: 'solar now',
+        color: '#7cffb2',
+        altitude: 0.055,
+        size: 0.54
+      }
+    ]
+
+    if (deadlineSolarLongitude !== null) {
+      labels.push({
+        id: 'label-deadline',
+        lat: 34,
+        lng: deadlineSolarLongitude,
+        text: 'solar at deadline',
+        color: '#ffcb97',
+        altitude: 0.045,
+        size: 0.45
+      })
+    }
+
+    return labels
+  }, [deadlineSolarLongitude, nowSolarLongitude])
 
   useEffect(() => {
     const globe = globeRef.current
@@ -197,21 +331,89 @@ export default function Globe3DView({
     const controls = globe.controls()
     controls.enableDamping = true
     controls.dampingFactor = 0.08
-    controls.rotateSpeed = 0.65
+    controls.rotateSpeed = 0.66
     controls.zoomSpeed = 0.82
     controls.enablePan = false
+    controls.autoRotate = !reducedMotion
+    controls.autoRotateSpeed = 0.27
 
     const [sunX, sunY, sunZ] = sunDirectionEcef(displayTime, useApparentSolar)
-    const ambient = new AmbientLight('#7caeff', showDayNight ? 0.2 : 0.55)
-    const directional = new DirectionalLight('#ffffff', showDayNight ? 1.35 : 0.18)
-    directional.position.set(sunX * 600, sunY * 600, sunZ * 600)
+    const ambient = new AmbientLight('#7caeff', showDayNight ? 0.26 : 0.52)
+    const directional = new DirectionalLight('#ffffff', showDayNight ? 1.6 : 0.24)
+    directional.position.set(sunX * 620, sunY * 620, sunZ * 620)
 
     globe.lights([ambient, directional])
-  }, [displayTime, showDayNight, useApparentSolar])
+  }, [displayTime, reducedMotion, showDayNight, useApparentSolar])
+
+  useEffect(() => {
+    if (!globeReady) {
+      return
+    }
+
+    globeRef.current?.pointOfView(
+      {
+        lat: 20,
+        lng: nowSolarLongitude - 20,
+        altitude: 2.05
+      },
+      750
+    )
+  }, [globeReady, nowSolarLongitude])
+
+  useEffect(() => {
+    const globe = globeRef.current as
+      | (GlobeMethods & {
+          getScreenCoords?: (lat: number, lng: number, altitude?: number) => { x: number; y: number } | null
+        })
+      | undefined
+
+    if (!globeReady || !showSolarTime || !globe || !globe.getScreenCoords) {
+      setScreenPaths({ now: '', deadline: null })
+      return
+    }
+
+    const buildPath = (longitude: number) => {
+      const points: Array<[number, number]> = []
+      for (let lat = -86; lat <= 86; lat += 3) {
+        const screen = globe.getScreenCoords?.(lat, longitude, 0.14)
+        if (!screen || !Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+          continue
+        }
+        points.push([screen.x, screen.y])
+      }
+
+      if (points.length < 2) {
+        return ''
+      }
+
+      return points
+        .map((point, index) => `${index === 0 ? 'M' : 'L'}${point[0].toFixed(1)} ${point[1].toFixed(1)}`)
+        .join(' ')
+    }
+
+    const updatePaths = () => {
+      const nowPath = buildPath(nowSolarLongitude)
+      const deadlinePath = deadlineSolarLongitude === null ? null : buildPath(deadlineSolarLongitude)
+      setScreenPaths({ now: nowPath, deadline: deadlinePath })
+    }
+
+    updatePaths()
+
+    const timer = window.setInterval(updatePaths, reducedMotion ? 1000 : 450)
+    return () => window.clearInterval(timer)
+  }, [
+    deadlineSolarLongitude,
+    globeReady,
+    nowSolarLongitude,
+    reducedMotion,
+    showSolarTime,
+    size.height,
+    size.width
+  ])
 
   return (
     <div
-      className="h-full min-h-[320px] rounded-xl border border-cyan-400/20 bg-black/30"
+      className="border-cyan-400/20 relative h-full min-h-[320px] rounded-xl border bg-black/30"
       data-testid="globe3d-view"
       ref={wrapperRef}
     >
@@ -227,21 +429,86 @@ export default function Globe3DView({
           atmosphereAltitude={0.16}
           polygonsData={countries}
           polygonGeoJsonGeometry="geometry"
-          polygonCapColor={() => 'rgba(12, 34, 74, 0.92)'}
-          polygonSideColor={() => 'rgba(7, 18, 38, 0.45)'}
-          polygonStrokeColor={() => 'rgba(111, 170, 255, 0.36)'}
-          polygonAltitude={0.0035}
+          polygonCapColor={() => 'rgba(38, 78, 124, 0.34)'}
+          polygonSideColor={() => 'rgba(17, 40, 66, 0.42)'}
+          polygonStrokeColor={() => 'rgba(112, 196, 255, 0.38)'}
+          polygonAltitude={0.0042}
           polygonCapCurvatureResolution={3}
+          onPolygonHover={(polygon) => {
+            if (!polygon) {
+              setHoverReadout('')
+              return
+            }
+
+            setHoverReadout('country hovered · line drift nominal')
+          }}
           pathsData={pathsData}
           pathPoints="points"
           pathPointLat="lat"
           pathPointLng="lng"
           pathPointAlt="altitude"
           pathColor="color"
-          pathStroke={(path) => ((path as PathDatum).id === 'solar-now' ? 0.66 : 0.42)}
-          pathDashLength={(path) => ((path as PathDatum).id === 'solar-deadline' ? 0.72 : 1)}
-          pathDashGap={(path) => ((path as PathDatum).id === 'solar-deadline' ? 0.38 : 0)}
-          pathDashAnimateTime={(path) => ((path as PathDatum).id === 'solar-now' ? 9_000 : 0)}
+          pathStroke={(path) => {
+            const id = (path as PathDatum).id
+            if (id === 'solar-now-glow') {
+              return 0.86
+            }
+            if (id === 'solar-now-core') {
+              return 0.54
+            }
+            if (id === 'solar-now-beam') {
+              return 0.34
+            }
+            if (id === 'solar-deadline') {
+              return 0.5
+            }
+            return 0.3
+          }}
+          pathDashLength={(path) => {
+            const id = (path as PathDatum).id
+            if (id === 'solar-deadline') return 0.78
+            if (id === 'solar-now-beam') return 0.2
+            return 1
+          }}
+          pathDashGap={(path) => {
+            const id = (path as PathDatum).id
+            if (id === 'solar-deadline') return 0.36
+            if (id === 'solar-now-beam') return 0.32
+            return 0
+          }}
+          pathDashAnimateTime={(path) => {
+            const id = (path as PathDatum).id
+            if (id === 'solar-now-core') return 4400
+            if (id === 'solar-now-beam') return 2200
+            return 0
+          }}
+          onPathHover={(path) => {
+            if (!path) {
+              setHoverReadout('')
+              return
+            }
+
+            const typed = path as PathDatum
+            if (typed.kind === 'solar-now') {
+              setHoverReadout(`solar now line · target ${targetClockLabel} in ${deadlineZoneLabel}`)
+              return
+            }
+
+            if (typed.kind === 'solar-deadline') {
+              setHoverReadout(`solar deadline ghost · ${targetClockLabel} ${deadlineZoneLabel}`)
+              return
+            }
+
+            setHoverReadout('terminator · civil day/night boundary')
+          }}
+          ringsData={ringData}
+          ringLat="lat"
+          ringLng="lng"
+          ringAltitude={0.03}
+          ringColor="color"
+          ringMaxRadius="maxRadius"
+          ringPropagationSpeed="propagationSpeed"
+          ringRepeatPeriod="repeatPeriod"
           pointsData={markerData}
           pointLat="lat"
           pointLng="lng"
@@ -249,17 +516,98 @@ export default function Globe3DView({
           pointColor="color"
           pointRadius="radius"
           pointLabel="label"
+          onPointHover={(point) => {
+            if (!point) {
+              setHoverReadout('')
+              return
+            }
+
+            setHoverReadout((point as MarkerDatum).label)
+          }}
+          labelsData={labelsData}
+          labelLat="lat"
+          labelLng="lng"
+          labelText="text"
+          labelColor="color"
+          labelAltitude="altitude"
+          labelSize="size"
+          labelDotRadius={0.2}
+          labelIncludeDot
           onGlobeClick={(coords) => {
-            globeRef.current?.pointOfView({ lat: coords.lat, lng: coords.lng, altitude: 1.6 }, 600)
+            const offsetHours = Math.max(-12, Math.min(14, Math.round(coords.lng / 15)))
+            const utcMinutes =
+              displayTime.getUTCHours() * 60 +
+              displayTime.getUTCMinutes() +
+              displayTime.getUTCSeconds() / 60 +
+              displayTime.getUTCMilliseconds() / 60_000
+            const localMinutes = utcMinutes + offsetHours * 60
+            const delta = signedCircularMinuteDelta(targetMinutesOfDay, localMinutes)
+            const localClock = formatClock(localMinutes)
+            setHoverReadout(
+              `probe ${coords.lat.toFixed(1)}°, ${coords.lng.toFixed(1)}° · UTC${offsetHours >= 0 ? '+' : ''}${offsetHours} · local ${localClock} · target ${targetClockLabel} (${delta >= 0 ? '+' : ''}${Math.round(delta)}m)`
+            )
+            globeRef.current?.pointOfView({ lat: coords.lat, lng: coords.lng, altitude: 1.58 }, 680)
           }}
           onGlobeReady={() => {
-            globeRef.current?.pointOfView({ lat: 18, lng: 0, altitude: 2.1 }, 0)
+            setGlobeReady(true)
+            globeRef.current?.pointOfView({ lat: 18, lng: nowSolarLongitude - 18, altitude: 2.1 }, 0)
           }}
         />
       ) : null}
-      <div className="pointer-events-none -mt-8 px-3 pb-2 text-[11px] text-cyan-100/70">
-        drag to rotate · scroll to zoom · double click to focus
+
+      {showSolarTime ? (
+        <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full">
+          {screenPaths.now ? (
+            <path
+              d={screenPaths.now}
+              fill="none"
+              stroke="rgba(110, 231, 255, 0.92)"
+              strokeWidth={3.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ filter: 'drop-shadow(0 0 8px rgba(124, 255, 178, 0.65))' }}
+            />
+          ) : null}
+          {screenPaths.now ? (
+            <path
+              d={screenPaths.now}
+              fill="none"
+              stroke="rgba(124, 255, 178, 0.95)"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
+          {screenPaths.deadline ? (
+            <path
+              d={screenPaths.deadline}
+              fill="none"
+              stroke="rgba(255, 194, 112, 0.9)"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="8 8"
+              style={{ filter: 'drop-shadow(0 0 6px rgba(255, 194, 112, 0.45))' }}
+            />
+          ) : null}
+        </svg>
+      ) : null}
+
+      <div className="border-cyan-300/35 bg-black/56 text-cyan-100 pointer-events-none absolute left-2 top-2 rounded-md border px-2 py-1 text-[11px]">
+        target {targetClockLabel} in {deadlineZoneLabel} ({formatUtcOffset(deadlineOffsetMinutes)})
+        <br />
+        solar now {nowSolarLongitude.toFixed(1)}°
+        {deadlineSolarLongitude !== null ? ` · at deadline ${deadlineSolarLongitude.toFixed(1)}°` : ''}
+        <br />
+        mint beam: now · amber dash: deadline
       </div>
+
+      <div className="text-cyan-100/78 pointer-events-none absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px]">
+        <span>{hoverReadout || 'drag to rotate · scroll to zoom · auto orbit enabled'}</span>
+        <span>{showLandmarks ? 'landmarks active' : 'landmarks off'}</span>
+      </div>
+
+      <div className="ring-cyan-300/15 pointer-events-none absolute inset-0 rounded-xl ring-1" />
     </div>
   )
 }

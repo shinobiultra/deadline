@@ -1,6 +1,6 @@
-# deadLINE
+# deadLINE (v0.2.0)
 
-Minimal OSS web app that visualizes a deadline as moving civil/solar lines over Earth (2D map + 3D globe).
+Minimal OSS web app that visualizes a deadline as moving civil/solar lines over Earth (2D map + 3D globe). Vibe coded on [5.3-Codex release day](https://openai.com/index/introducing-gpt-5-3-codex/).
 
 ## stack
 
@@ -18,6 +18,7 @@ Minimal OSS web app that visualizes a deadline as moving civil/solar lines over 
 
 ```bash
 npm install
+npm run hooks:install
 npm run dev
 ```
 
@@ -28,9 +29,18 @@ Open the local URL shown by Vite (typically `http://localhost:5173`).
 Run all quality checks:
 
 ```bash
+npm run quality:full
+```
+
+Or run pieces individually:
+
+```bash
+npm run format:check
 npm run lint
+npm run typecheck
 npm run test
 npm run build
+npm run perf:report
 npm run test:e2e
 npm run ui:capture
 ```
@@ -55,7 +65,8 @@ Then open `http://localhost:4173`.
 7. Switch preview mode between `now`, `deadline`, and `scrub`.
 8. On 2d map: drag horizontally for continuous wrap, wheel zoom, then `reset view` (must snap back).
 9. Use `snap` in stage header and verify PNG download.
-10. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
+10. Toggle `detail zoom` and verify high-detail open-map raster mode (building-level zoom + line overlays); zooming out below world-level should auto-return to the default deadLINE view.
+11. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
 
 ## optional timezone polygon accuracy mode
 
@@ -98,7 +109,16 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 
 ## docs
 
+- docs index: `docs/README.md`
 - spec: `docs/spec.md`
 - architecture: `docs/architecture.md`
+- ui guide: `docs/ui.md`
+- testing + quality gates: `docs/testing.md`
+- versioning: `docs/versioning.md`
 - licenses: `docs/licenses.md`
 - agent logs: `docs/agents/implementation/`
+- changelog: `CHANGELOG.md`
+
+## license
+
+Apache-2.0 (`LICENSE`).

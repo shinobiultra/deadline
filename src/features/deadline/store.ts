@@ -12,6 +12,7 @@ export type DeadlineStore = {
   showTimezones: boolean
   showSolarTime: boolean
   showDayNight: boolean
+  brightDayLighting: boolean
   showLandmarks: boolean
   previewMode: PreviewMode
   scrubRatio: number
@@ -30,6 +31,7 @@ export type DeadlineStore = {
   setShowTimezones: (value: boolean) => void
   setShowSolarTime: (value: boolean) => void
   setShowDayNight: (value: boolean) => void
+  setBrightDayLighting: (value: boolean) => void
   setShowLandmarks: (value: boolean) => void
   setPreviewMode: (value: PreviewMode) => void
   setScrubRatio: (value: number) => void
@@ -43,7 +45,8 @@ export type DeadlineStore = {
 }
 
 const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const prefersReducedMotion = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches : false
+const prefersReducedMotion =
+  typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches : false
 
 const tomorrow = DateTime.now().plus({ day: 1 })
 
@@ -58,6 +61,7 @@ export const useDeadlineStore = create<DeadlineStore>()(
       showTimezones: true,
       showSolarTime: true,
       showDayNight: true,
+      brightDayLighting: true,
       showLandmarks: false,
       previewMode: 'now',
       scrubRatio: 0,
@@ -76,6 +80,7 @@ export const useDeadlineStore = create<DeadlineStore>()(
       setShowTimezones: (value) => set({ showTimezones: value }),
       setShowSolarTime: (value) => set({ showSolarTime: value }),
       setShowDayNight: (value) => set({ showDayNight: value }),
+      setBrightDayLighting: (value) => set({ brightDayLighting: value }),
       setShowLandmarks: (value) => set({ showLandmarks: value }),
       setPreviewMode: (value) => set({ previewMode: value }),
       setScrubRatio: (value) => set({ scrubRatio: Math.max(0, Math.min(1, value)) }),
@@ -98,6 +103,7 @@ export const useDeadlineStore = create<DeadlineStore>()(
         showTimezones: state.showTimezones,
         showSolarTime: state.showSolarTime,
         showDayNight: state.showDayNight,
+        brightDayLighting: state.brightDayLighting,
         showLandmarks: state.showLandmarks,
         previewMode: state.previewMode,
         scrubRatio: state.scrubRatio,

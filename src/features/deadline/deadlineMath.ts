@@ -11,8 +11,22 @@ export type TimezoneOption = {
 }
 
 function parseDate(date: string): { year: number; month: number; day: number } | null {
-  const [year, month, day] = date.split('-').map(Number)
-  if (!year || !month || !day) {
+  const parts = date.split('-')
+  if (parts.length !== 3) {
+    return null
+  }
+
+  const year = Number(parts[0])
+  const month = Number(parts[1])
+  const day = Number(parts[2])
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    year <= 0 ||
+    month <= 0 ||
+    day <= 0
+  ) {
     return null
   }
 
@@ -20,15 +34,14 @@ function parseDate(date: string): { year: number; month: number; day: number } |
 }
 
 function parseTime(time: string): { hour: number; minute: number } | null {
-  const [hour, minute] = time.split(':').map(Number)
-  if (
-    Number.isNaN(hour) ||
-    Number.isNaN(minute) ||
-    hour < 0 ||
-    hour > 23 ||
-    minute < 0 ||
-    minute > 59
-  ) {
+  const parts = time.split(':')
+  if (parts.length !== 2) {
+    return null
+  }
+
+  const hour = Number(parts[0])
+  const minute = Number(parts[1])
+  if (Number.isNaN(hour) || Number.isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
     return null
   }
 
@@ -104,23 +117,22 @@ export function parseDeadlineInput(input: DeadlineInput): DeadlineParseResult {
     }
   }
 
-  const offsetCandidates = dt
-    .getPossibleOffsets()
-    .sort((a, b) => a.toMillis() - b.toMillis())
+  const offsetCandidates = dt.getPossibleOffsets().sort((a, b) => a.toMillis() - b.toMillis())
   const ambiguous = offsetCandidates.length > 1
 
   const selected =
     input.ambiguousPreference === 'later'
       ? offsetCandidates[offsetCandidates.length - 1]
       : offsetCandidates[0]
+  const selectedOffset = selected ?? dt
 
   return {
     valid: true,
     ambiguous,
     isNonexistent: false,
-    deadlineUtcMs: selected.toUTC().toMillis(),
+    deadlineUtcMs: selectedOffset.toUTC().toMillis(),
     targetMinutesOfDay: hour * 60 + minute,
-    selectedOffsetMinutes: selected.offset,
+    selectedOffsetMinutes: selectedOffset.offset,
     candidateOffsetsMinutes: offsetCandidates.map((candidate) => candidate.offset)
   }
 }

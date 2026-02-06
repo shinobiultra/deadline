@@ -1,5 +1,5 @@
 import html2canvas from 'html2canvas'
-import { Camera, Bug, Sparkles } from 'lucide-react'
+import { Camera, Bug, Sparkles, Radar } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { CommandPanel } from '@/ui/CommandPanel'
@@ -11,13 +11,23 @@ import { SettingsDrawer } from '@/ui/SettingsDrawer'
 import { StatsStrip } from '@/ui/StatsStrip'
 import { ToastStack, type ToastItem } from '@/ui/ToastStack'
 import { Map2DView } from '@/views/map2d/Map2DView'
+import { DetailMapView } from '@/views/detail/DetailMapView'
 import { useTimezonePolygons } from '@/features/civil/useTimezonePolygons'
 import { useCities } from '@/features/deadline/cities'
-import { listDeadlineTimezoneOptions, normalizeDeadlineZone, parseDeadlineInput } from '@/features/deadline/deadlineMath'
+import {
+  describeTimezone,
+  listDeadlineTimezoneOptions,
+  normalizeDeadlineZone,
+  parseDeadlineInput
+} from '@/features/deadline/deadlineMath'
 import { useDeadlineStore } from '@/features/deadline/store'
 import { useLandmarks } from '@/features/landmarks/useLandmarks'
 import { computeLandmarkCrossings } from '@/features/landmarks/crossings'
-import { solarDeadlineLongitude, solarDistanceToMeridian, solarLineSpeedDegreesPerHour } from '@/features/solar/solarMath'
+import {
+  solarDeadlineLongitude,
+  solarDistanceToMeridian,
+  solarLineSpeedDegreesPerHour
+} from '@/features/solar/solarMath'
 import { useIntervalNow } from '@/lib/useIntervalNow'
 
 const Globe3DView = lazy(() => import('@/views/globe3d/Globe3DView'))
@@ -41,9 +51,17 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function formatTargetClock(totalMinutes: number): string {
+  const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440
+  const hour = Math.floor(normalized / 60)
+  const minute = normalized % 60
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
 export default function App() {
   const nowMs = useIntervalNow(1000)
   const [viewMode, setViewMode] = useState<ViewMode>('2d')
+  const [showDetailView, setShowDetailView] = useState(false)
   const [cityQuery, setCityQuery] = useState('')
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
@@ -64,6 +82,7 @@ export default function App() {
     showTimezones,
     showSolarTime,
     showDayNight,
+    brightDayLighting,
     showLandmarks,
     previewMode,
     scrubRatio,
@@ -82,6 +101,7 @@ export default function App() {
     setShowTimezones,
     setShowSolarTime,
     setShowDayNight,
+    setBrightDayLighting,
     setShowLandmarks,
     setPreviewMode,
     setScrubRatio,
@@ -97,7 +117,8 @@ export default function App() {
   const timezones = useMemo(() => listDeadlineTimezoneOptions(), [])
   const cityResults = useCities(cityQuery)
   const landmarks = useLandmarks()
-  const { status: timezonePolygonStatus, features: timezonePolygons } = useTimezonePolygons(useTimezonePolygonsMode)
+  const { status: timezonePolygonStatus, features: timezonePolygons } =
+    useTimezonePolygons(useTimezonePolygonsMode)
 
   const parseResult = useMemo(
     () =>
@@ -111,6 +132,7 @@ export default function App() {
   )
 
   const nowTime = useMemo(() => new Date(nowMs), [nowMs])
+
   const deadlineTimeDate = useMemo(() => {
     if (!parseResult.valid || !parseResult.deadlineUtcMs) {
       return null
@@ -130,8 +152,7 @@ export default function App() {
     if (previewMode === 'scrub') {
       const start = nowMs
       const end = parseResult.deadlineUtcMs
-      const interpolated = start + (end - start) * scrubRatio
-      return new Date(interpolated)
+      return new Date(start + (end - start) * scrubRatio)
     }
 
     return new Date(nowMs)
@@ -144,6 +165,14 @@ export default function App() {
 
     return solarDeadlineLongitude(displayTime, parseResult.targetMinutesOfDay, useApparentSolar)
   }, [displayTime, parseResult.targetMinutesOfDay, parseResult.valid, useApparentSolar])
+
+  const deadlineSolarLongitude = useMemo(() => {
+    if (!parseResult.valid || parseResult.targetMinutesOfDay === undefined || !deadlineTimeDate) {
+      return null
+    }
+
+    return solarDeadlineLongitude(deadlineTimeDate, parseResult.targetMinutesOfDay, useApparentSolar)
+  }, [deadlineTimeDate, parseResult.targetMinutesOfDay, parseResult.valid, useApparentSolar])
 
   const lineSpeed = useMemo(() => {
     if (!parseResult.valid || parseResult.targetMinutesOfDay === undefined) {
@@ -162,7 +191,11 @@ export default function App() {
   }, [location, parseResult.targetMinutesOfDay, parseResult.valid, solarLongitude])
 
   const crossingPlan = useMemo(() => {
-    if (!parseResult.valid || parseResult.deadlineUtcMs === undefined || parseResult.targetMinutesOfDay === undefined) {
+    if (
+      !parseResult.valid ||
+      parseResult.deadlineUtcMs === undefined ||
+      parseResult.targetMinutesOfDay === undefined
+    ) {
       return []
     }
 
@@ -173,9 +206,22 @@ export default function App() {
       targetMinutesOfDay: parseResult.targetMinutesOfDay,
       apparentSolar: useApparentSolar
     })
-  }, [landmarks, nowMs, parseResult.deadlineUtcMs, parseResult.targetMinutesOfDay, parseResult.valid, useApparentSolar])
+  }, [
+    landmarks,
+    nowMs,
+    parseResult.deadlineUtcMs,
+    parseResult.targetMinutesOfDay,
+    parseResult.valid,
+    useApparentSolar
+  ])
 
   const remainingMs = parseResult.deadlineUtcMs ? parseResult.deadlineUtcMs - nowMs : Number.POSITIVE_INFINITY
+
+  const deadlineZoneLabel = describeTimezone(deadlineZone)
+  const targetClockLabel =
+    parseResult.valid && parseResult.targetMinutesOfDay !== undefined
+      ? formatTargetClock(parseResult.targetMinutesOfDay)
+      : '--:--'
 
   const pushToast = useCallback((id: string, message: string) => {
     setToasts((previous) => {
@@ -190,6 +236,11 @@ export default function App() {
       setToasts((previous) => previous.filter((toast) => toast.id !== id))
     }, 9_000)
   }, [])
+
+  const handleDetailZoomOutExit = useCallback(() => {
+    setShowDetailView(false)
+    pushToast(`detail-auto-${Date.now()}`, 'zoomed out: switched back to deadLINE map')
+  }, [pushToast])
 
   const [firedAlerts, setFiredAlerts] = useState<Set<string>>(() => new Set())
 
@@ -255,6 +306,10 @@ export default function App() {
         event.preventDefault()
         setDebugMode((value) => !value)
       }
+
+      if (event.key.toLowerCase() === 'z') {
+        setShowDetailView((value) => !value)
+      }
     }
 
     window.addEventListener('keydown', onKeydown)
@@ -308,13 +363,19 @@ export default function App() {
             kmFromLocation={distance?.distanceKm}
           />
 
-          <DistanceBox location={location} deltaMinutes={distance?.deltaMinutes} deltaKm={distance?.distanceKm} />
+          <DistanceBox
+            location={location}
+            deltaMinutes={distance?.deltaMinutes}
+            deltaKm={distance?.distanceKm}
+          />
 
           <SettingsDrawer
             useApparentSolar={useApparentSolar}
             setUseApparentSolar={setUseApparentSolar}
             useTimezonePolygons={useTimezonePolygonsMode}
             setUseTimezonePolygons={setUseTimezonePolygons}
+            brightDayLighting={brightDayLighting}
+            setBrightDayLighting={setBrightDayLighting}
             timezonePolygonStatus={timezonePolygonStatus}
             civilGlowMinutes={civilGlowMinutes}
             setCivilGlowMinutes={setCivilGlowMinutes}
@@ -330,8 +391,11 @@ export default function App() {
         </aside>
 
         <section className="grid gap-2" ref={stageRef} data-debug-key="map-stage">
-          <header className="flex items-center justify-between rounded-xl border border-cyan-300/20 bg-panel/40 p-2 text-xs" data-debug-key="stage-header">
-            <h1 className="font-mono text-sm tracking-[0.18em] text-cyan-100">deadline</h1>
+          <header
+            className="border-cyan-300/20 flex items-center justify-between rounded-xl border bg-panel/40 p-2 text-xs"
+            data-debug-key="stage-header"
+          >
+            <h1 className="text-cyan-100 font-mono text-sm tracking-[0.18em]">deadline</h1>
             <div className="flex items-center gap-2" data-debug-key="view-toggle-row">
               <button
                 className={`btn-toggle px-2 py-1 ${viewMode === '2d' ? 'active' : ''}`}
@@ -346,6 +410,16 @@ export default function App() {
                 onClick={() => setViewMode('3d')}
               >
                 3d globe
+              </button>
+              <button
+                className={`btn-toggle px-2 py-1 ${showDetailView ? 'active' : ''}`}
+                type="button"
+                onClick={() => setShowDetailView((value) => !value)}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <Radar size={14} />
+                  detail zoom
+                </span>
               </button>
               <button
                 className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
@@ -375,15 +449,30 @@ export default function App() {
 
           <div className="relative min-h-[420px] overflow-hidden rounded-xl">
             {parseResult.valid && parseResult.targetMinutesOfDay !== undefined ? (
-              viewMode === '2d' ? (
+              showDetailView ? (
+                <DetailMapView
+                  mode={viewMode}
+                  nowTime={nowTime}
+                  targetMinutesOfDay={parseResult.targetMinutesOfDay}
+                  solarNowLongitude={solarLongitude}
+                  solarDeadlineLongitude={deadlineSolarLongitude}
+                  location={location}
+                  showLandmarks={showLandmarks}
+                  landmarks={landmarks}
+                  onZoomedOutExit={handleDetailZoomOutExit}
+                />
+              ) : viewMode === '2d' ? (
                 <Map2DView
                   nowTime={nowTime}
                   displayTime={displayTime}
                   deadlineTime={deadlineTimeDate}
                   targetMinutesOfDay={parseResult.targetMinutesOfDay}
+                  deadlineZoneLabel={deadlineZoneLabel}
+                  deadlineOffsetMinutes={parseResult.selectedOffsetMinutes}
                   showTimezones={showTimezones}
                   showSolarTime={showSolarTime}
                   showDayNight={showDayNight}
+                  brightDayLighting={brightDayLighting}
                   showLandmarks={showLandmarks}
                   useApparentSolar={useApparentSolar}
                   useTimezonePolygons={useTimezonePolygonsMode}
@@ -396,7 +485,7 @@ export default function App() {
               ) : (
                 <Suspense
                   fallback={
-                    <div className="grid h-full min-h-[320px] place-items-center rounded-xl border border-cyan-400/20 bg-black/30 text-sm text-cyan-100/70">
+                    <div className="border-cyan-400/20 text-cyan-100/70 grid h-full min-h-[320px] place-items-center rounded-xl border bg-black/30 text-sm">
                       loading globe chunk...
                     </div>
                   }
@@ -406,10 +495,14 @@ export default function App() {
                     displayTime={displayTime}
                     deadlineTime={deadlineTimeDate}
                     targetMinutesOfDay={parseResult.targetMinutesOfDay}
+                    targetClockLabel={targetClockLabel}
+                    deadlineZoneLabel={deadlineZoneLabel}
+                    deadlineOffsetMinutes={parseResult.selectedOffsetMinutes}
                     showSolarTime={showSolarTime}
                     showDayNight={showDayNight}
                     showLandmarks={showLandmarks}
                     useApparentSolar={useApparentSolar}
+                    reducedMotion={reducedMotion}
                     location={location}
                     landmarks={landmarks}
                   />
@@ -435,7 +528,10 @@ export default function App() {
         </section>
       </div>
 
-      <ToastStack toasts={toasts} onDismiss={(id) => setToasts((previous) => previous.filter((toast) => toast.id !== id))} />
+      <ToastStack
+        toasts={toasts}
+        onDismiss={(id) => setToasts((previous) => previous.filter((toast) => toast.id !== id))}
+      />
 
       <DebugOverlay enabled={debugMode} rootRef={rootRef} onClose={() => setDebugMode(false)} />
     </main>

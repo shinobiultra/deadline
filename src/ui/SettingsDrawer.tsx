@@ -7,6 +7,8 @@ type SettingsDrawerProps = {
   setUseApparentSolar: (value: boolean) => void
   useTimezonePolygons: boolean
   setUseTimezonePolygons: (value: boolean) => void
+  brightDayLighting: boolean
+  setBrightDayLighting: (value: boolean) => void
   timezonePolygonStatus: 'idle' | 'loading' | 'ready' | 'missing' | 'error'
   civilGlowMinutes: number
   setCivilGlowMinutes: (value: number) => void
@@ -26,6 +28,8 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
     setUseApparentSolar,
     useTimezonePolygons,
     setUseTimezonePolygons,
+    brightDayLighting,
+    setBrightDayLighting,
     timezonePolygonStatus,
     civilGlowMinutes,
     setCivilGlowMinutes,
@@ -49,12 +53,17 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
   }
 
   return (
-    <details className="rounded-xl border border-cyan-300/20 bg-black/35 p-3 text-xs text-cyan-100/80">
-      <summary className="cursor-pointer select-none text-[10px] uppercase tracking-[0.18em] text-cyan-200/70">
+    <details className="border-cyan-300/20 text-cyan-100/80 rounded-xl border bg-black/35 p-3 text-xs">
+      <summary className="text-cyan-200/70 cursor-pointer select-none text-[10px] uppercase tracking-[0.18em]">
         settings
       </summary>
       <div className="mt-3 grid gap-3">
         <SwitchPill label="apparent solar" checked={useApparentSolar} onCheckedChange={setUseApparentSolar} />
+        <SwitchPill
+          label="bright daytime lighting"
+          checked={brightDayLighting}
+          onCheckedChange={setBrightDayLighting}
+        />
 
         <SwitchPill
           label="accuracy mode (timezone polygons)"
@@ -62,7 +71,7 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
           onCheckedChange={setUseTimezonePolygons}
         />
         {useTimezonePolygons ? (
-          <p className="text-[11px] text-cyan-100/70">
+          <p className="text-cyan-100/70 text-[11px]">
             {timezonePolygonStatus === 'ready'
               ? 'timezone polygons loaded'
               : timezonePolygonStatus === 'loading'
@@ -78,13 +87,14 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
         <label className="grid gap-1">
           <span>civil glow tolerance (minutes)</span>
           <input
+            className="h-10"
             type="range"
             min={1}
             max={45}
             value={civilGlowMinutes}
             onChange={(event) => setCivilGlowMinutes(Number(event.target.value))}
           />
-          <span className="font-mono text-cyan-100/70">{civilGlowMinutes}m</span>
+          <span className="text-cyan-100/70 font-mono">{civilGlowMinutes}m</span>
         </label>
 
         <fieldset className="grid gap-1">
