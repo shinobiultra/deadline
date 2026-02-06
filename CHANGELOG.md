@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.1 - 2026-02-06
+
+- added deterministic demo mode (`?demo=1`) for docs/screens and visual tests:
+  - fixed deadline baseline: `2026-02-05 00:00 AoE` (`21:00 JST`)
+  - frozen clock for drift-free captures
+- improved deadline UX clarity and safety in the command deck:
+  - stronger active target banner + state chips (`synced`, `draft unsaved`, `locked`)
+  - slot rename and guarded delete controls
+  - apply/discard actions shown only while draft is dirty
+  - workflow card auto-collapses when fully complete
+- fixed detail-map robustness so hover and zoom interactions no longer depend on raster tile completion
+- improved zoom ergonomics:
+  - cursor-anchored zoom in 2D map and detail map
+  - wheel-based globe dolly toward cursor raycast hit
+- added seam-safe 2D solar-line rendering and compact visual legend
+- added deterministic screenshot governance:
+  - `npm run ui:capture` now updates `docs/screens/*`
+  - CI gate verifies screenshot currency via `npm run screens:check`
+- expanded UI docs with per-control rationale in `docs/ui-controls.md`
+
 ## 0.3.0 - 2026-02-06
 
 - added safe deadline-slot workflow:

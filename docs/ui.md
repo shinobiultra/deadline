@@ -52,4 +52,18 @@ The command panel shows both:
 
 - overlap + hit-target detector (`data-debug-key`)
 - one-click capture: `screenshot.png` + `layout.json`
-- `npm run ui:capture` produces deterministic desktop/mobile screenshots into `artifacts/ui/`
+- `npm run ui:capture` produces deterministic demo screenshots into `docs/screens/` (and mirrors to `artifacts/ui/`)
+
+## Screenshot Baseline
+
+- demo mode URL: `?demo=1`
+- fixed demo deadline: `2026-02-05 00:00 AoE` (`2026-02-05 12:00 UTC`, `21:00 JST`)
+- frozen demo now: `2026-02-05T08:21:44Z`
+- view presets for capture:
+  - `?demo=1&view=2d`
+  - `?demo=1&view=3d`
+  - `?demo=1&view=detail`
+
+## Control Audit
+
+Detailed control-level justification is maintained in `docs/ui-controls.md`.

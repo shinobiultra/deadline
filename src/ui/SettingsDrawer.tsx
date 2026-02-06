@@ -52,11 +52,21 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
     setAlertThresholds([...alertThresholdMinutes, value].sort((a, b) => b - a))
   }
 
+  const alertsSummary = alertThresholdMinutes
+    .slice()
+    .sort((a, b) => b - a)
+    .map((value) => (value >= 60 ? `${value / 60}h` : `${value}m`))
+    .join(', ')
+
   return (
     <details className="border-cyan-300/20 text-cyan-100/80 rounded-xl border bg-black/35 p-3 text-xs">
       <summary className="text-cyan-200/70 cursor-pointer select-none text-[10px] uppercase tracking-[0.18em]">
         settings
       </summary>
+      <p className="text-cyan-100/72 mt-2 text-[11px]">
+        mode: {useApparentSolar ? 'apparent' : 'mean'} solar · civil glow {civilGlowMinutes}m · alerts{' '}
+        {alertsSummary}
+      </p>
       <div className="mt-3 grid gap-3">
         <SwitchPill label="apparent solar" checked={useApparentSolar} onCheckedChange={setUseApparentSolar} />
         <SwitchPill

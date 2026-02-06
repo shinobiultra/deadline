@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Globe, { type GlobeMethods } from 'react-globe.gl'
 import { feature } from 'topojson-client'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
-import { AmbientLight, DirectionalLight } from 'three'
+import { AmbientLight, DirectionalLight, Raycaster, Vector2 } from 'three'
 import type { LocationPoint } from '@/features/deadline/types'
 import {
   buildTerminatorPolyline,
@@ -73,6 +73,25 @@ type ScreenPathState = {
   deadline: string | null
 }
 
+type InteractiveGlobeMethods = GlobeMethods & {
+  scene: () => { children: Array<unknown> }
+  camera: () => {
+    position: { clone: () => unknown }
+  }
+  renderer: () => {
+    domElement: HTMLCanvasElement
+  }
+  toGeoCoords?: (point: { x: number; y: number; z: number }) => { lat: number; lng: number } | null
+  pointOfView: (
+    point?: {
+      lat?: number
+      lng?: number
+      altitude?: number
+    } | null,
+    ms?: number
+  ) => { lat: number; lng: number; altitude: number }
+}
+
 function formatClock(totalMinutes: number): string {
   const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440
   const hour = Math.floor(normalized / 60)
@@ -135,6 +154,8 @@ export default function Globe3DView({
   const [globeReady, setGlobeReady] = useState(false)
   const [manualOrbitSeen, setManualOrbitSeen] = useState(false)
   const size = useElementSize(container)
+  const raycasterRef = useRef(new Raycaster())
+  const mouseRef = useRef(new Vector2())
 
   useEffect(() => {
     setContainer(wrapperRef.current)
@@ -455,6 +476,59 @@ export default function Globe3DView({
         if (event.target instanceof HTMLCanvasElement) {
           setManualOrbitSeen(true)
         }
+      }}
+      onWheelCapture={(event) => {
+        const globe = globeRef.current as InteractiveGlobeMethods | undefined
+        if (!globeReady || !globe) {
+          return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+        setManualOrbitSeen(true)
+
+        const renderer = globe.renderer?.()
+        const camera = globe.camera?.()
+        const scene = globe.scene?.()
+        const currentView = globe.pointOfView()
+        if (!renderer || !camera || !scene || !currentView) {
+          return
+        }
+
+        const rect = renderer.domElement.getBoundingClientRect()
+        const nx = ((event.clientX - rect.left) / rect.width) * 2 - 1
+        const ny = -((event.clientY - rect.top) / rect.height) * 2 + 1
+        mouseRef.current.set(nx, ny)
+        raycasterRef.current.setFromCamera(mouseRef.current, camera as never)
+
+        const intersects = raycasterRef.current.intersectObjects(scene.children as never, true)
+        const hit = intersects.find((entry) => entry.point)
+        const geoHit = hit?.point && globe.toGeoCoords ? globe.toGeoCoords(hit.point) : null
+
+        const zoomScale = Math.exp(event.deltaY * 0.00135)
+        const nextAltitude = Math.max(0.72, Math.min(3.9, currentView.altitude * zoomScale))
+
+        if (geoHit) {
+          const approachFactor = event.deltaY < 0 ? 0.2 : 0.08
+          const nextLat = currentView.lat + (geoHit.lat - currentView.lat) * approachFactor
+          const nextLng = currentView.lng + (geoHit.lng - currentView.lng) * approachFactor
+          globe.pointOfView(
+            {
+              lat: nextLat,
+              lng: nextLng,
+              altitude: nextAltitude
+            },
+            0
+          )
+          return
+        }
+
+        globe.pointOfView(
+          {
+            altitude: nextAltitude
+          },
+          0
+        )
       }}
     >
       {size.width > 0 && size.height > 0 ? (

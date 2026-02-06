@@ -10,6 +10,7 @@
   - includes globe manual-rotate and `reset orbit` coverage
   - includes GH-pages subpath smoke (`tests/e2e/gh-pages.spec.ts` via dedicated config)
 - UI capture: `scripts/capture_ui.mjs` screenshots for manual visual review
+  - canonical outputs: `docs/screens/*` (deterministic demo mode)
 - performance: `scripts/perf_report.mjs` bundle-size thresholds + artifact report
 
 ## Commands
@@ -24,6 +25,7 @@ npm run perf:report
 npm run test:e2e
 npm run test:e2e:gh-pages
 npm run ui:capture
+npm run screens:check
 ```
 
 Full local gate:
@@ -45,7 +47,10 @@ Repository hook config: `.pre-commit-config.yaml`
   - e2e suite
   - perf report with thresholds
 
-CI also runs a GH-pages smoke job that builds with `GITHUB_PAGES=true` and validates map/globe rendering under a repo subpath.
+CI also runs:
+
+- GH-pages smoke job (`GITHUB_PAGES=true`) validating map/globe rendering under repo subpath.
+- screenshot currency gate (`screens:check`) that fails if `docs/screens/*` would change.
 
 Install hooks:
 

@@ -1,4 +1,33 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+function extractLonLat(readout: string) {
+  const match = readout.match(/lon\s*(-?\d+(?:\.\d+)?)°\s*·\s*lat\s*(-?\d+(?:\.\d+)?)°/i)
+  if (!match) {
+    return null
+  }
+
+  const lon = Number(match[1])
+  const lat = Number(match[2])
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    return null
+  }
+
+  return { lon, lat }
+}
+
+async function waitForLonLat(locator: Locator, page: Page) {
+  for (let i = 0; i < 16; i += 1) {
+    const text = await locator.innerText()
+    const parsed = extractLonLat(text)
+    if (parsed) {
+      return parsed
+    }
+
+    await page.waitForTimeout(120)
+  }
+
+  return null
+}
 
 test('deadline controls, wrapped map interactions, detail zoom and snapshot stay stable', async ({
   page
@@ -117,4 +146,54 @@ test('globe view keeps visible lines, supports drag/zoom and detail mode', async
 test('debug layout checks report zero overlap/tap-target warnings on desktop', async ({ page }) => {
   await page.goto('/?debug=1')
   await expect(page.getByText(/warnings:\s*0/i)).toBeVisible({ timeout: 8_000 })
+})
+
+test('zoom remains anchored under cursor in 2d and detail views', async ({ page }) => {
+  await page.goto('/?demo=1&view=2d')
+  const map2d = page.getByTestId('map2d-view')
+  await expect(map2d).toBeVisible()
+
+  const box2d = await map2d.boundingBox()
+  expect(box2d).toBeTruthy()
+  if (!box2d) {
+    return
+  }
+
+  const targetX = box2d.x + box2d.width * 0.58
+  const targetY = box2d.y + box2d.height * 0.48
+
+  await page.mouse.move(targetX, targetY)
+  await expect(page.getByTestId('map2d-hover')).toBeVisible()
+  const before2d = await waitForLonLat(page.getByTestId('map2d-hover'), page)
+  expect(before2d).not.toBeNull()
+
+  await page.mouse.wheel(0, -760)
+  await page.mouse.move(targetX, targetY)
+  const after2d = await waitForLonLat(page.getByTestId('map2d-hover'), page)
+  expect(after2d).not.toBeNull()
+  expect(Math.abs((after2d?.lon ?? 0) - (before2d?.lon ?? 0))).toBeLessThan(1.6)
+  expect(Math.abs((after2d?.lat ?? 0) - (before2d?.lat ?? 0))).toBeLessThan(1.4)
+
+  await page.getByRole('button', { name: 'detail zoom' }).click()
+  const detail = page.getByTestId('detail-map-view')
+  await expect(detail).toBeVisible()
+
+  const detailBox = await detail.boundingBox()
+  expect(detailBox).toBeTruthy()
+  if (!detailBox) {
+    return
+  }
+
+  const detailX = detailBox.x + detailBox.width * 0.56
+  const detailY = detailBox.y + detailBox.height * 0.52
+  await page.mouse.move(detailX, detailY)
+  const beforeDetail = await waitForLonLat(page.getByTestId('detail-hover-readout'), page)
+  expect(beforeDetail).not.toBeNull()
+
+  await page.mouse.wheel(0, -820)
+  await page.mouse.move(detailX, detailY)
+  const afterDetail = await waitForLonLat(page.getByTestId('detail-hover-readout'), page)
+  expect(afterDetail).not.toBeNull()
+  expect(Math.abs((afterDetail?.lon ?? 0) - (beforeDetail?.lon ?? 0))).toBeLessThan(1.6)
+  expect(Math.abs((afterDetail?.lat ?? 0) - (beforeDetail?.lat ?? 0))).toBeLessThan(1.4)
 })

@@ -53,9 +53,11 @@ const OPEN_MAP_STYLE: maplibregl.StyleSpecification = {
       source: 'openstreetmap',
       paint: {
         'raster-opacity': 0.96,
-        'raster-contrast': 0.08,
-        'raster-saturation': -0.2,
-        'raster-brightness-max': 0.94
+        'raster-contrast': 0.36,
+        'raster-saturation': -0.78,
+        'raster-hue-rotate': 192,
+        'raster-brightness-min': 0.04,
+        'raster-brightness-max': 0.42
       }
     }
   ]
@@ -243,180 +245,247 @@ export function DetailMapView(props: DetailMapViewProps) {
     })
 
     mapRef.current = map
+    setZoomLevel(map.getZoom())
+    let styleInitialized = false
 
     const styleWatchdog = window.setTimeout(() => {
-      if (!map.isStyleLoaded()) {
+      if (!styleInitialized) {
         setStyleError('detail tiles are still loading; check network or retry detail view')
       }
     }, 7000)
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'top-right')
+    map.scrollZoom.disable()
+    const initializeStyle = () => {
+      if (styleInitialized) {
+        return
+      }
 
-    map.on('load', () => {
+      if (!map.getSource('deadline-lines')) {
+        map.addSource('deadline-lines', {
+          type: 'geojson',
+          data: lineCollectionRef.current
+        })
+      }
+
+      if (!map.getLayer('deadline-now')) {
+        map.addLayer({
+          id: 'deadline-now',
+          type: 'line',
+          source: 'deadline-lines',
+          filter: ['==', ['get', 'kind'], 'now'],
+          paint: {
+            'line-color': '#7cffb2',
+            'line-width': ['interpolate', ['exponential', 1.24], ['zoom'], 2, 2.4, 9, 4.6, 15, 7.8],
+            'line-opacity': 0.96,
+            'line-blur': 0.5
+          }
+        })
+      }
+
+      if (!map.getLayer('deadline-now-glow')) {
+        map.addLayer({
+          id: 'deadline-now-glow',
+          type: 'line',
+          source: 'deadline-lines',
+          filter: ['==', ['get', 'kind'], 'now'],
+          paint: {
+            'line-color': '#6ee7ff',
+            'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 2, 7, 9, 11, 15, 16],
+            'line-opacity': 0.2,
+            'line-blur': 1.3
+          }
+        })
+      }
+
+      if (!map.getLayer('deadline-at')) {
+        map.addLayer({
+          id: 'deadline-at',
+          type: 'line',
+          source: 'deadline-lines',
+          filter: ['==', ['get', 'kind'], 'deadline'],
+          paint: {
+            'line-color': '#ffc27f',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.4, 12, 4],
+            'line-opacity': 0.72,
+            'line-dasharray': [2.2, 1.1]
+          }
+        })
+      }
+
+      if (!map.getSource('deadline-points')) {
+        map.addSource('deadline-points', {
+          type: 'geojson',
+          data: pointCollectionRef.current
+        })
+      }
+
+      if (!map.getLayer('deadline-points')) {
+        map.addLayer({
+          id: 'deadline-points',
+          type: 'circle',
+          source: 'deadline-points',
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              2,
+              2,
+              8,
+              4,
+              15,
+              ['case', ['==', ['get', 'kind'], 'location'], 8, 5]
+            ],
+            'circle-color': ['case', ['==', ['get', 'kind'], 'location'], '#6ee7ff', '#ffab71'],
+            'circle-stroke-width': ['case', ['==', ['get', 'kind'], 'location'], 2, 0.5],
+            'circle-stroke-color': '#082035'
+          }
+        })
+      }
+
+      if (!map.getLayer('deadline-point-labels')) {
+        map.addLayer({
+          id: 'deadline-point-labels',
+          type: 'symbol',
+          source: 'deadline-points',
+          minzoom: 5,
+          filter: ['==', ['get', 'kind'], 'landmark'],
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 5, 10, 12, 13],
+            'text-offset': [0, 1.1],
+            'text-anchor': 'top',
+            'text-font': ['Noto Sans Regular']
+          },
+          paint: {
+            'text-color': '#1d2b3e',
+            'text-halo-color': '#f9fffb',
+            'text-halo-width': 1.3
+          }
+        })
+      }
+
+      styleInitialized = true
       window.clearTimeout(styleWatchdog)
+      setStyleError(null)
       setLoaded(true)
       setZoomLevel(map.getZoom())
+    }
 
-      map.addSource('deadline-lines', {
-        type: 'geojson',
-        data: lineCollectionRef.current
-      })
+    const onMouseMove = (event: maplibregl.MapMouseEvent) => {
+      const offsetHours = clamp(Math.round(wrap180(event.lngLat.lng) / 15), -12, 14)
+      const localNowMinutes =
+        nowTimeRef.current.getUTCHours() * 60 +
+        nowTimeRef.current.getUTCMinutes() +
+        nowTimeRef.current.getUTCSeconds() / 60 +
+        offsetHours * 60
 
-      map.addLayer({
-        id: 'deadline-now',
-        type: 'line',
-        source: 'deadline-lines',
-        filter: ['==', ['get', 'kind'], 'now'],
-        paint: {
-          'line-color': '#7cffb2',
-          'line-width': ['interpolate', ['exponential', 1.24], ['zoom'], 2, 2.4, 9, 4.6, 15, 7.8],
-          'line-opacity': 0.96,
-          'line-blur': 0.5
-        }
-      })
+      const localNow = formatClock(localNowMinutes)
+      const targetClock = formatClock(targetMinutesRef.current)
+      const hitFeatures =
+        map.getLayer('deadline-points') !== undefined
+          ? map.queryRenderedFeatures(event.point, { layers: ['deadline-points'] })
+          : []
+      const topFeature = hitFeatures[0]
+      const topLabel = typeof topFeature?.properties?.label === 'string' ? topFeature.properties.label : null
+      const topKind = typeof topFeature?.properties?.kind === 'string' ? topFeature.properties.kind : null
 
-      map.addLayer({
-        id: 'deadline-now-glow',
-        type: 'line',
-        source: 'deadline-lines',
-        filter: ['==', ['get', 'kind'], 'now'],
-        paint: {
-          'line-color': '#6ee7ff',
-          'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 2, 7, 9, 11, 15, 16],
-          'line-opacity': 0.2,
-          'line-blur': 1.3
-        }
-      })
-
-      map.addLayer({
-        id: 'deadline-at',
-        type: 'line',
-        source: 'deadline-lines',
-        filter: ['==', ['get', 'kind'], 'deadline'],
-        paint: {
-          'line-color': '#ffc27f',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.4, 12, 4],
-          'line-opacity': 0.72,
-          'line-dasharray': [2.2, 1.1]
-        }
-      })
-
-      map.addSource('deadline-points', {
-        type: 'geojson',
-        data: pointCollectionRef.current
-      })
-
-      map.addLayer({
-        id: 'deadline-points',
-        type: 'circle',
-        source: 'deadline-points',
-        paint: {
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            2,
-            2,
-            8,
-            4,
-            15,
-            ['case', ['==', ['get', 'kind'], 'location'], 8, 5]
-          ],
-          'circle-color': ['case', ['==', ['get', 'kind'], 'location'], '#6ee7ff', '#ffab71'],
-          'circle-stroke-width': ['case', ['==', ['get', 'kind'], 'location'], 2, 0.5],
-          'circle-stroke-color': '#082035'
-        }
-      })
-
-      map.addLayer({
-        id: 'deadline-point-labels',
-        type: 'symbol',
-        source: 'deadline-points',
-        minzoom: 5,
-        filter: ['==', ['get', 'kind'], 'landmark'],
-        layout: {
-          'text-field': ['get', 'label'],
-          'text-size': ['interpolate', ['linear'], ['zoom'], 5, 10, 12, 13],
-          'text-offset': [0, 1.1],
-          'text-anchor': 'top',
-          'text-font': ['Noto Sans Regular']
-        },
-        paint: {
-          'text-color': '#1d2b3e',
-          'text-halo-color': '#f9fffb',
-          'text-halo-width': 1.3
-        }
-      })
-
-      map.on('mousemove', (event) => {
-        const offsetHours = clamp(Math.round(wrap180(event.lngLat.lng) / 15), -12, 14)
-        const localNowMinutes =
-          nowTimeRef.current.getUTCHours() * 60 +
-          nowTimeRef.current.getUTCMinutes() +
-          nowTimeRef.current.getUTCSeconds() / 60 +
-          offsetHours * 60
-
-        const localNow = formatClock(localNowMinutes)
-        const targetClock = formatClock(targetMinutesRef.current)
-        const hitFeatures = map.queryRenderedFeatures(event.point, { layers: ['deadline-points'] })
-        const topFeature = hitFeatures[0]
-        const topLabel =
-          typeof topFeature?.properties?.label === 'string' ? topFeature.properties.label : null
-        const topKind = typeof topFeature?.properties?.kind === 'string' ? topFeature.properties.kind : null
-
-        if (topLabel && topKind === 'landmark') {
-          setHoverReadout(
-            `cross candidate: ${topLabel} · lon ${event.lngLat.lng.toFixed(2)}° · lat ${event.lngLat.lat.toFixed(2)}°`
-          )
-          return
-        }
-
+      if (topLabel && topKind === 'landmark') {
         setHoverReadout(
-          `lon ${event.lngLat.lng.toFixed(2)}° · lat ${event.lngLat.lat.toFixed(2)}° · UTC${offsetHours >= 0 ? '+' : ''}${offsetHours} · local ${localNow} · target ${targetClock}`
+          `cross candidate: ${topLabel} · lon ${event.lngLat.lng.toFixed(2)}° · lat ${event.lngLat.lat.toFixed(2)}°`
         )
-      })
+        return
+      }
 
-      map.on('click', (event) => {
-        const hitFeatures = map.queryRenderedFeatures(event.point, { layers: ['deadline-points'] })
-        const topFeature = hitFeatures[0]
-        const topLabel =
-          typeof topFeature?.properties?.label === 'string' ? topFeature.properties.label : null
-        if (topLabel) {
-          map.easeTo({
-            center: [event.lngLat.lng, event.lngLat.lat],
-            zoom: Math.max(map.getZoom(), 8.8),
-            duration: 580
-          })
-          setHoverReadout(`focused: ${topLabel}`)
+      setHoverReadout(
+        `lon ${event.lngLat.lng.toFixed(2)}° · lat ${event.lngLat.lat.toFixed(2)}° · UTC${offsetHours >= 0 ? '+' : ''}${offsetHours} · local ${localNow} · target ${targetClock}`
+      )
+    }
+
+    const onClick = (event: maplibregl.MapMouseEvent) => {
+      const hitFeatures =
+        map.getLayer('deadline-points') !== undefined
+          ? map.queryRenderedFeatures(event.point, { layers: ['deadline-points'] })
+          : []
+      const topFeature = hitFeatures[0]
+      const topLabel = typeof topFeature?.properties?.label === 'string' ? topFeature.properties.label : null
+      if (topLabel) {
+        map.easeTo({
+          center: [event.lngLat.lng, event.lngLat.lat],
+          zoom: Math.max(map.getZoom(), 8.8),
+          duration: 580
+        })
+        setHoverReadout(`focused: ${topLabel}`)
+      }
+    }
+
+    const onMoveEnd = () => {
+      const currentZoom = map.getZoom()
+      setZoomLevel(currentZoom)
+
+      if (currentZoom > 2.2) {
+        autoExitTriggeredRef.current = false
+      }
+
+      if (currentZoom <= 2.2 && onZoomedOutExit && !autoExitTriggeredRef.current) {
+        autoExitTriggeredRef.current = true
+        onZoomedOutExit()
+      }
+    }
+
+    const onError = (event: maplibregl.ErrorEvent) => {
+      if (event.error && 'message' in event.error) {
+        const message = String(event.error.message)
+        if (!message.includes('404')) {
+          setStyleError(message)
         }
+      }
+    }
+
+    map.on('style.load', initializeStyle)
+    map.on('load', initializeStyle)
+    map.on('mousemove', onMouseMove)
+    map.on('click', onClick)
+    map.on('moveend', onMoveEnd)
+    map.on('error', onError)
+
+    if (map.isStyleLoaded()) {
+      initializeStyle()
+    }
+
+    const canvas = map.getCanvas()
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const px = event.clientX - rect.left
+      const py = event.clientY - rect.top
+      const currentZoom = map.getZoom()
+      const scaleDelta = Math.exp(-event.deltaY * 0.0015)
+      const nextZoom = clamp(currentZoom * scaleDelta, 1, 19)
+      if (Math.abs(nextZoom - currentZoom) < 1e-4) {
+        return
+      }
+
+      const around = map.unproject(new maplibregl.Point(px, py))
+      map.easeTo({
+        zoom: nextZoom,
+        around,
+        duration: 0
       })
+    }
 
-      map.on('moveend', () => {
-        const currentZoom = map.getZoom()
-        setZoomLevel(currentZoom)
-
-        if (currentZoom > 2.2) {
-          autoExitTriggeredRef.current = false
-        }
-
-        if (currentZoom <= 2.2 && onZoomedOutExit && !autoExitTriggeredRef.current) {
-          autoExitTriggeredRef.current = true
-          onZoomedOutExit()
-        }
-      })
-
-      map.on('error', (event) => {
-        if (event.error && 'message' in event.error) {
-          const message = String(event.error.message)
-          if (!message.includes('404')) {
-            setStyleError(message)
-          }
-        }
-      })
-    })
+    canvas.addEventListener('wheel', onWheel, { passive: false })
 
     return () => {
       window.clearTimeout(styleWatchdog)
+      canvas.removeEventListener('wheel', onWheel)
+      map.off('style.load', initializeStyle)
+      map.off('load', initializeStyle)
+      map.off('mousemove', onMouseMove)
+      map.off('click', onClick)
+      map.off('moveend', onMoveEnd)
+      map.off('error', onError)
       map.remove()
       mapRef.current = null
       setLoaded(false)
@@ -526,9 +595,9 @@ export function DetailMapView(props: DetailMapViewProps) {
         </div>
 
         <p className="text-cyan-50 font-mono">
-          style: open map raster · zoom {zoomLevel.toFixed(2)} · {mode === '3d' ? 'pitched' : 'flat'}
+          style: night ops raster · zoom {zoomLevel.toFixed(2)} · {mode === '3d' ? 'pitched' : 'flat'}
         </p>
-        <p className="text-cyan-100/78">
+        <p className="text-cyan-100/78" data-testid="detail-hover-readout">
           {hoverReadout || 'hover for civil timezone + target context · zoom out below 2.2 to return'}
         </p>
         {styleError ? <p className="text-rose-200">detail tiles warning: {styleError}</p> : null}

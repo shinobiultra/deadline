@@ -4,12 +4,12 @@
 
 - semantic versioning (`MAJOR.MINOR.PATCH`)
 - current line: `0.x` (fast iteration, minor can include breaking changes)
-- tag each release commit (`v0.3.0`, etc.)
+- tag each release commit (`v0.3.1`, etc.)
 
 ## Current release
 
-- `v0.3.0`
-- focus: safe deadline-slot editing, GH-pages rendering hardening, and smoother render-loop cadence
+- `v0.3.1`
+- focus: deterministic demo/screenshot pipeline, clearer deadline workflow UX, and robust detail-map interactions under slow/failed tile loads
 
 ## Release checklist
 

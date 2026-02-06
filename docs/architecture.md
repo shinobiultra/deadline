@@ -4,6 +4,7 @@
 
 - `src/features/deadline`: input parsing, UTC conversion, validation, state store.
 - `src/features/deadline/slots.ts`: persisted deadline-slot manager (`active`, `draft`, lock state, capped slot list).
+- demo mode (`?demo=1`) overrides active slot/time for deterministic UI capture and docs screenshots.
 - `src/features/solar`: equation of time, declination, solar/civil line math, terminator points.
 - `src/features/civil`: UTC offset stripe model.
 - `src/features/civil/timezonePolygons.ts`: optional polygon dataset loader and civil-time zone matching.

@@ -50,3 +50,21 @@
   - globe screen overlays moved to adaptive rAF updates
 - Ran full validation suite including hooks and GH-pages smoke.
 - Bumped project version to `0.3.0`.
+- Added deterministic demo mode (`?demo=1`) with fixed AoE baseline and frozen now-time for reproducible screenshots.
+- Reworked command panel deadline UX:
+  - stronger active target banner
+  - slot rename + guarded delete flow
+  - apply/discard only shown for dirty draft
+  - workflow auto-collapse once complete
+- Hardened detail map lifecycle so interaction handlers initialize on style readiness and do not wait for full tile completion.
+- Added/validated cursor-anchored zoom checks for 2D and detail views in Playwright.
+- Added deterministic docs screenshot pipeline into `docs/screens` and CI screenshot drift gate (`screens:check`).
+- Added button-level control rationale doc (`docs/ui-controls.md`).
+- Ran validation:
+  - `npm run lint`
+  - `npm run typecheck`
+  - `npm run test`
+  - `npm run test:e2e`
+  - `npm run test:e2e:gh-pages`
+  - `npm run ui:capture`
+- Bumped project version to `0.3.1`.

@@ -15,6 +15,7 @@ import { DetailMapView } from '@/views/detail/DetailMapView'
 import { useTimezonePolygons } from '@/features/civil/useTimezonePolygons'
 import { useCities } from '@/features/deadline/cities'
 import {
+  AOE_IANA_ZONE,
   describeTimezone,
   listDeadlineTimezoneOptions,
   normalizeDeadlineZone,
@@ -44,11 +45,32 @@ const Globe3DView = lazy(() => import('@/views/globe3d/Globe3DView'))
 
 type ViewMode = '2d' | '3d'
 
+type DemoConfig = {
+  enabled: boolean
+  debug: boolean
+  initialView: ViewMode
+  detailOpen: boolean
+}
+
 type DeadlineDraft = {
   date: string
   time: string
   zone: string
   ambiguousPreference: AmbiguousPreference
+}
+
+const DEMO_NOW_ISO = '2026-02-05T08:21:44.000Z'
+const DEMO_NOW_MS = new Date(DEMO_NOW_ISO).getTime()
+const DEMO_SLOT: DeadlineSlot = {
+  id: 'demo-aoe-2026-02-05',
+  name: 'deadline #1',
+  date: '2026-02-05',
+  time: '00:00',
+  zone: AOE_IANA_ZONE,
+  ambiguousPreference: 'earlier',
+  locked: false,
+  createdAtMs: DEMO_NOW_MS,
+  updatedAtMs: DEMO_NOW_MS
 }
 
 function draftFromSlot(slot: DeadlineSlot): DeadlineDraft {
@@ -88,11 +110,37 @@ function formatTargetClock(totalMinutes: number): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
+function readDemoConfig(): DemoConfig {
+  if (typeof window === 'undefined') {
+    return {
+      enabled: false,
+      debug: false,
+      initialView: '2d',
+      detailOpen: false
+    }
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const enabled = params.get('demo') === '1'
+  const debug = params.get('debug') === '1'
+  const requestedView = params.get('view')?.toLowerCase()
+  const initialView: ViewMode = requestedView === '3d' ? '3d' : '2d'
+  const detailOpen = requestedView === 'detail'
+
+  return {
+    enabled,
+    debug,
+    initialView,
+    detailOpen
+  }
+}
+
 export default function App() {
+  const demo = useMemo(() => readDemoConfig(), [])
   const nowMs = useIntervalNow(1000)
   const { nowMs: renderNowMs, fps: renderFps, driftMs: renderDriftMs } = useRenderNow(60, 30)
-  const [viewMode, setViewMode] = useState<ViewMode>('2d')
-  const [showDetailView, setShowDetailView] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>(demo.initialView)
+  const [showDetailView, setShowDetailView] = useState(demo.detailOpen)
   const [cityQuery, setCityQuery] = useState('')
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [terminatorComputeMs, setTerminatorComputeMs] = useState(0)
@@ -100,14 +148,15 @@ export default function App() {
   const rootRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
-  const [debugMode, setDebugMode] = useState(() => {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('debug') === '1'
-  })
+  const [debugMode, setDebugMode] = useState(demo.debug)
   const [assetCheckError, setAssetCheckError] = useState<string | null>(null)
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
   const [slotsState, setSlotsState] = useState(() => {
+    if (demo.enabled) {
+      return { activeId: DEMO_SLOT.id, slots: [DEMO_SLOT] }
+    }
+
     if (typeof window === 'undefined') {
       const slot = defaultDeadlineSlot(localZone)
       return { activeId: slot.id, slots: [slot] }
@@ -173,12 +222,43 @@ export default function App() {
   }, [activeSlot])
 
   useEffect(() => {
+    if (demo.enabled) {
+      return
+    }
+
     if (typeof window === 'undefined') {
       return
     }
 
     saveDeadlineSlots(slotsState)
-  }, [slotsState])
+  }, [demo.enabled, slotsState])
+
+  useEffect(() => {
+    if (!demo.enabled) {
+      return
+    }
+
+    setLocation(null)
+    setPreviewMode('now')
+    setScrubRatio(0)
+    setShowLandmarks(false)
+    setUseTimezonePolygons(false)
+    setUseApparentSolar(false)
+    setShowDayNight(true)
+    setShowSolarTime(true)
+    setShowTimezones(true)
+  }, [
+    demo.enabled,
+    setLocation,
+    setPreviewMode,
+    setScrubRatio,
+    setShowLandmarks,
+    setUseTimezonePolygons,
+    setUseApparentSolar,
+    setShowDayNight,
+    setShowSolarTime,
+    setShowTimezones
+  ])
 
   const draftDirty = useMemo(() => {
     if (!activeSlot) {
@@ -257,7 +337,9 @@ export default function App() {
     [draftDeadline]
   )
 
-  const visualNowMs = previewMode === 'now' ? renderNowMs : nowMs
+  const effectiveNowMs = demo.enabled ? DEMO_NOW_MS : nowMs
+  const effectiveRenderNowMs = demo.enabled ? DEMO_NOW_MS : renderNowMs
+  const visualNowMs = previewMode === 'now' ? effectiveRenderNowMs : effectiveNowMs
   const nowTime = useMemo(() => new Date(visualNowMs), [visualNowMs])
 
   const deadlineTimeDate = useMemo(() => {
@@ -277,13 +359,20 @@ export default function App() {
     }
 
     if (previewMode === 'scrub') {
-      const start = nowMs
+      const start = effectiveNowMs
       const end = activeParseResult.deadlineUtcMs
       return new Date(start + (end - start) * scrubRatio)
     }
 
     return new Date(visualNowMs)
-  }, [activeParseResult.deadlineUtcMs, activeParseResult.valid, nowMs, previewMode, scrubRatio, visualNowMs])
+  }, [
+    activeParseResult.deadlineUtcMs,
+    activeParseResult.valid,
+    effectiveNowMs,
+    previewMode,
+    scrubRatio,
+    visualNowMs
+  ])
 
   const solarLongitude = useMemo(() => {
     if (!activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined) {
@@ -328,7 +417,7 @@ export default function App() {
 
     return computeLandmarkCrossings({
       landmarks,
-      rangeStartMs: nowMs,
+      rangeStartMs: effectiveNowMs,
       rangeEndMs: activeParseResult.deadlineUtcMs,
       targetMinutesOfDay: activeParseResult.targetMinutesOfDay,
       apparentSolar: useApparentSolar
@@ -337,13 +426,13 @@ export default function App() {
     activeParseResult.deadlineUtcMs,
     activeParseResult.targetMinutesOfDay,
     activeParseResult.valid,
+    effectiveNowMs,
     landmarks,
-    nowMs,
     useApparentSolar
   ])
 
   const remainingMs = activeParseResult.deadlineUtcMs
-    ? activeParseResult.deadlineUtcMs - nowMs
+    ? activeParseResult.deadlineUtcMs - effectiveNowMs
     : Number.POSITIVE_INFINITY
 
   const deadlineZoneLabel = describeTimezone(activeSlot?.zone ?? draftDeadline.zone)
@@ -387,6 +476,10 @@ export default function App() {
   }, [])
 
   const addNewSlot = useCallback(() => {
+    if (demo.enabled) {
+      return
+    }
+
     setSlotsState((previous) => {
       if (previous.slots.length >= maxDeadlineSlots()) {
         pushToast('slots-cap', `slot limit reached (${maxDeadlineSlots()})`)
@@ -406,9 +499,13 @@ export default function App() {
         slots: [...previous.slots, candidate]
       }
     })
-  }, [draftDeadline, pushToast])
+  }, [demo.enabled, draftDeadline, pushToast])
 
   const duplicateActiveSlot = useCallback(() => {
+    if (demo.enabled) {
+      return
+    }
+
     if (!activeSlot) {
       return
     }
@@ -433,9 +530,69 @@ export default function App() {
         slots: [...previous.slots, copy]
       }
     })
-  }, [activeSlot, pushToast])
+  }, [activeSlot, demo.enabled, pushToast])
+
+  const renameActiveSlot = useCallback(
+    (name: string) => {
+      if (demo.enabled || !activeSlot) {
+        return
+      }
+
+      const normalized = name.trim()
+      if (!normalized) {
+        return
+      }
+
+      setSlotsState((previous) => ({
+        activeId: previous.activeId,
+        slots: previous.slots.map((slot) =>
+          slot.id === previous.activeId
+            ? {
+                ...slot,
+                name: normalized.slice(0, 42),
+                updatedAtMs: Date.now()
+              }
+            : slot
+        )
+      }))
+    },
+    [activeSlot, demo.enabled]
+  )
+
+  const deleteActiveSlot = useCallback(() => {
+    if (demo.enabled) {
+      return
+    }
+
+    setSlotsState((previous) => {
+      if (previous.slots.length <= 1) {
+        pushToast('slots-min', 'at least one deadline slot must remain')
+        return previous
+      }
+
+      const activeIndex = previous.slots.findIndex((slot) => slot.id === previous.activeId)
+      if (activeIndex < 0) {
+        return previous
+      }
+
+      const nextSlots = previous.slots.filter((slot) => slot.id !== previous.activeId)
+      const nextActive = nextSlots[Math.max(0, activeIndex - 1)] ?? nextSlots[0]
+      if (!nextActive) {
+        return previous
+      }
+
+      return {
+        activeId: nextActive.id,
+        slots: nextSlots
+      }
+    })
+  }, [demo.enabled, pushToast])
 
   const toggleActiveLock = useCallback(() => {
+    if (demo.enabled) {
+      return
+    }
+
     if (!activeSlot) {
       return
     }
@@ -452,9 +609,13 @@ export default function App() {
           : slot
       )
     }))
-  }, [activeSlot])
+  }, [activeSlot, demo.enabled])
 
   const applyDraftToActive = useCallback(() => {
+    if (demo.enabled) {
+      return
+    }
+
     if (!activeSlot) {
       return
     }
@@ -484,7 +645,7 @@ export default function App() {
           : slot
       )
     }))
-  }, [activeSlot, draftDeadline, draftParseResult.valid, pushToast])
+  }, [activeSlot, demo.enabled, draftDeadline, draftParseResult.valid, pushToast])
 
   const discardDraft = useCallback(() => {
     if (!activeSlot) {
@@ -500,13 +661,13 @@ export default function App() {
   }, [pushToast])
 
   const [firedAlerts, setFiredAlerts] = useState<Set<string>>(() => new Set())
-  const latestNowRef = useRef(nowMs)
+  const latestNowRef = useRef(effectiveNowMs)
   const previousRemainingRef = useRef<number | null>(null)
   const previousNowRef = useRef<number | null>(null)
 
   useEffect(() => {
-    latestNowRef.current = nowMs
-  }, [nowMs])
+    latestNowRef.current = effectiveNowMs
+  }, [effectiveNowMs])
 
   useEffect(() => {
     const nowSnapshot = latestNowRef.current
@@ -526,10 +687,10 @@ export default function App() {
       return
     }
 
-    const remaining = activeParseResult.deadlineUtcMs - nowMs
+    const remaining = activeParseResult.deadlineUtcMs - effectiveNowMs
     if (remaining <= 0) {
       previousRemainingRef.current = remaining
-      previousNowRef.current = nowMs
+      previousNowRef.current = effectiveNowMs
       return
     }
 
@@ -561,7 +722,7 @@ export default function App() {
         if (
           previousNow !== null &&
           previousNow < crossing.crossingMs &&
-          nowMs >= crossing.crossingMs &&
+          effectiveNowMs >= crossing.crossingMs &&
           crossing.crossingMs <= activeParseResult.deadlineUtcMs
         ) {
           const crossingTime = DateTime.fromMillis(crossing.crossingMs).toFormat('HH:mm:ss')
@@ -574,7 +735,7 @@ export default function App() {
     }
 
     previousRemainingRef.current = remaining
-    previousNowRef.current = nowMs
+    previousNowRef.current = effectiveNowMs
   }, [
     activeParseResult.deadlineUtcMs,
     activeParseResult.valid,
@@ -583,7 +744,7 @@ export default function App() {
     enableBrowserNotifications,
     enableCrossingAlerts,
     firedAlerts,
-    nowMs,
+    effectiveNowMs,
     pushToast
   ])
 
@@ -674,9 +835,13 @@ export default function App() {
             onAddSlot={addNewSlot}
             onDuplicateSlot={duplicateActiveSlot}
             onToggleLock={toggleActiveLock}
+            onRenameSlot={renameActiveSlot}
+            onDeleteSlot={deleteActiveSlot}
             onApplyDraft={applyDraftToActive}
             onDiscardDraft={discardDraft}
-            applyDisabled={!draftParseResult.valid || !draftDirty || Boolean(activeSlot?.locked)}
+            applyDisabled={
+              demo.enabled || !draftParseResult.valid || !draftDirty || Boolean(activeSlot?.locked)
+            }
             location={location}
             setLocation={setLocation}
             cityQuery={cityQuery}
@@ -694,6 +859,7 @@ export default function App() {
             setPreviewMode={setPreviewMode}
             scrubRatio={scrubRatio}
             setScrubRatio={setScrubRatio}
+            demoMode={demo.enabled}
           />
         </aside>
 
@@ -762,14 +928,14 @@ export default function App() {
 
           <div className="border-cyan-300/30 bg-black/38 text-cyan-100/88 rounded-md border px-2 py-1 text-[11px]">
             <p className="text-cyan-50 font-mono">
-              tracking:{' '}
               {activeSlot
-                ? `${activeSlot.name} · ${activeSlot.date} ${activeSlot.time} · ${deadlineZoneLabel}`
+                ? `${activeSlot.name} — ${activeSlot.date} ${activeSlot.time} ${deadlineZoneLabel}`
                 : 'no active deadline'}
             </p>
             <p className="text-cyan-100/75">
-              target {targetClockLabel} · {activeSlot?.locked ? 'locked' : 'editable'} ·{' '}
-              {draftDirty ? 'draft pending apply/discard' : 'draft synced'}
+              target {targetClockLabel}
+              {' • '}
+              {activeSlot?.locked ? 'locked' : draftDirty ? 'draft unsaved' : 'synced'}
             </p>
           </div>
 
@@ -854,7 +1020,7 @@ export default function App() {
           </div>
 
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            <CountdownCard nowMs={nowMs} deadlineUtcMs={activeParseResult.deadlineUtcMs} />
+            <CountdownCard nowMs={effectiveNowMs} deadlineUtcMs={activeParseResult.deadlineUtcMs} />
 
             <StatsStrip
               solarLongitude={solarLongitude}

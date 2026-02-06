@@ -1,7 +1,7 @@
 {
   "name": "deadline",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "perf:report": "node scripts/perf_report.mjs",
     "test:perf": "npm run build && npm run perf:report",
     "ui:capture": "npm run build && (npm run preview -- --host 127.0.0.1 --port 4174 --strictPort & PREVIEW_PID=$!; npx wait-on http://127.0.0.1:4174; CAPTURE_BASE_URL=http://127.0.0.1:4174 node scripts/capture_ui.mjs; kill $PREVIEW_PID)",
+    "screens:check": "npm run ui:capture && node scripts/check_docs_screens_clean.mjs",
     "quality:full": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run perf:report && npm run test:e2e && npm run ui:capture",
     "hooks:install": "uvx prek install -f --install-hooks && uvx prek install -f -t pre-push --install-hooks",
     "hooks:run": "uvx prek run -a --show-diff-on-failure",

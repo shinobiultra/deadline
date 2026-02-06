@@ -1,7 +1,7 @@
 # Status
 
-- Version: `0.3.0`.
-- Scope: v1 core + UX hardening + safe multi-deadline workflow + GH-pages rendering hardening.
+- Version: `0.3.1`.
+- Scope: v1 core + UX hardening + safe multi-deadline workflow + GH-pages rendering hardening + deterministic demo/screens pipeline.
 - Verification gates:
   - `npm run format:check`
   - `npm run lint`
@@ -16,8 +16,10 @@
 - 2D map: infinite horizontal wrap, zoom/pan/reset, now+deadline visualization.
 - 3D globe: `react-globe.gl` with reliable manual orbit interaction, reset orbit control, and visible solar/terminator paths.
 - Detail mode: MapLibre raster open-map style with zoom-out auto-return to deadLINE view.
+- Detail mode robustness: hover/zoom logic initializes without waiting for full remote tile completion.
 - Layout: command deck left, wide map stage right, utility cards around map stage (below map).
 - Deadline safety: slot manager + draft/apply/discard + slot lock to prevent accidental overwrites.
 - Debug tooling: overlap detector + screenshot/layout export.
 - GH-pages safety: base-path aware build + runtime asset probes + CI subpath smoke tests.
+- Docs/screens safety: deterministic `?demo=1` capture baseline + CI screenshot drift gate.
 - Known gap: timezone polygon data is still optional to avoid default ODbL payload coupling.

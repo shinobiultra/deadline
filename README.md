@@ -1,4 +1,4 @@
-# deadLINE (v0.3.0)
+# deadLINE (v0.3.1)
 
 Minimal OSS web app that visualizes a deadline as moving civil/solar lines over Earth (2D map + 3D globe). Vibe coded on [5.3-Codex release day](https://openai.com/index/introducing-gpt-5-3-codex/).
 
@@ -45,6 +45,7 @@ npm run perf:report
 npm run test:e2e
 npm run test:e2e:gh-pages
 npm run ui:capture
+npm run screens:check
 ```
 
 Run production preview locally:
@@ -60,6 +61,14 @@ Run GH-pages subpath smoke locally:
 
 ```bash
 GH_PAGES_REPO=deadline GH_PAGES_PORT=4176 npm run test:e2e:gh-pages
+```
+
+Demo mode for deterministic docs/screens capture:
+
+```bash
+http://localhost:5173/?demo=1&view=2d
+http://localhost:5173/?demo=1&view=3d
+http://localhost:5173/?demo=1&view=detail
 ```
 
 ## manual smoke checklist
@@ -128,6 +137,7 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 - gh-pages hardening: `docs/gh-pages.md`
 - render loop/perf model: `docs/render-loop.md`
 - ui guide: `docs/ui.md`
+- ui controls audit: `docs/ui-controls.md`
 - testing + quality gates: `docs/testing.md`
 - versioning: `docs/versioning.md`
 - licenses: `docs/licenses.md`

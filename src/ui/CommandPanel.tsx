@@ -2,17 +2,20 @@ import { DateTime } from 'luxon'
 import {
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Copy,
-  Lock,
   LocateFixed,
+  Lock,
   MapPin,
+  Pencil,
   Plus,
   Search,
   Trash2,
   Unlock
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CityRecord } from '@/features/deadline/cities'
 import { AOE_IANA_ZONE, describeTimezone, type TimezoneOption } from '@/features/deadline/deadlineMath'
 import type { DeadlineParseResult, LocationPoint, PreviewMode } from '@/features/deadline/types'
@@ -46,6 +49,8 @@ type CommandPanelProps = {
   onAddSlot: () => void
   onDuplicateSlot: () => void
   onToggleLock: () => void
+  onRenameSlot: (name: string) => void
+  onDeleteSlot: () => void
   onApplyDraft: () => void
   onDiscardDraft: () => void
   applyDisabled: boolean
@@ -66,6 +71,7 @@ type CommandPanelProps = {
   setPreviewMode: (value: PreviewMode) => void
   scrubRatio: number
   setScrubRatio: (value: number) => void
+  demoMode?: boolean
 }
 
 type WorkflowState = 'done' | 'pending' | 'blocked' | 'optional'
@@ -76,6 +82,8 @@ type WorkflowStep = {
   detail: string
   state: WorkflowState
 }
+
+const WORKFLOW_STORAGE_KEY = 'deadline-workflow-collapsed-v1'
 
 function dateStringTomorrow() {
   return DateTime.now().plus({ day: 1 }).toISODate() ?? '2026-01-01'
@@ -90,22 +98,6 @@ function formatTargetClock(minutes: number | undefined) {
   const hour = Math.floor(normalized / 60)
   const minute = normalized % 60
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-}
-
-function formatOffset(minutes: number | undefined) {
-  if (minutes === undefined) {
-    return 'offset pending'
-  }
-
-  const sign = minutes >= 0 ? '+' : '-'
-  const abs = Math.abs(minutes)
-  const hour = Math.floor(abs / 60)
-  const minute = abs % 60
-  if (minute === 0) {
-    return `UTC${sign}${String(hour).padStart(2, '0')}`
-  }
-
-  return `UTC${sign}${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
 function parseCurrentInput(date: string, time: string, zone: string): DateTime | null {
@@ -144,6 +136,26 @@ function workflowLabelClass(state: WorkflowState) {
   return 'text-cyan-100/90'
 }
 
+function statusChipClass(kind: 'synced' | 'unsaved' | 'locked') {
+  if (kind === 'locked') {
+    return 'border-sky-300/50 bg-sky-900/35 text-sky-100'
+  }
+
+  if (kind === 'unsaved') {
+    return 'border-amber-300/50 bg-amber-900/35 text-amber-100'
+  }
+
+  return 'border-neon/50 bg-emerald-900/35 text-emerald-100'
+}
+
+function readWorkflowCollapsePreference() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  return window.localStorage.getItem(WORKFLOW_STORAGE_KEY) === '1'
+}
+
 export function CommandPanel(props: CommandPanelProps) {
   const {
     deadlineDate,
@@ -165,6 +177,8 @@ export function CommandPanel(props: CommandPanelProps) {
     onAddSlot,
     onDuplicateSlot,
     onToggleLock,
+    onRenameSlot,
+    onDeleteSlot,
     onApplyDraft,
     onDiscardDraft,
     applyDisabled,
@@ -184,15 +198,45 @@ export function CommandPanel(props: CommandPanelProps) {
     previewMode,
     setPreviewMode,
     scrubRatio,
-    setScrubRatio
+    setScrubRatio,
+    demoMode = false
   } = props
 
   const dateInputRef = useRef<HTMLInputElement>(null)
   const timeInputRef = useRef<HTMLInputElement>(null)
-  const [timezoneSearch, setTimezoneSearch] = useState('')
-  const [lastEditedAtMs, setLastEditedAtMs] = useState(() => Date.now())
+  const deleteTimerRef = useRef<number | null>(null)
+  const completedWorkflowRef = useRef(false)
 
-  const markEdited = () => setLastEditedAtMs(Date.now())
+  const [timezoneSearch, setTimezoneSearch] = useState('')
+  const [slotNameDraft, setSlotNameDraft] = useState(activeSlot?.name ?? '')
+  const [deleteArmed, setDeleteArmed] = useState(false)
+  const [workflowCollapsed, setWorkflowCollapsed] = useState(readWorkflowCollapsePreference)
+
+  useEffect(() => {
+    if (!activeSlot) {
+      setSlotNameDraft('')
+      return
+    }
+
+    setSlotNameDraft(activeSlot.name)
+    setDeleteArmed(false)
+  }, [activeSlot])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.setItem(WORKFLOW_STORAGE_KEY, workflowCollapsed ? '1' : '0')
+  }, [workflowCollapsed])
+
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current !== null) {
+        window.clearTimeout(deleteTimerRef.current)
+      }
+    }
+  }, [])
 
   const zoneNow = DateTime.now().setZone(deadlineZone)
   const nowZoneLabel = zoneNow.isValid ? zoneNow.toFormat("ccc, dd LLL HH:mm 'local'") : 'invalid timezone'
@@ -219,7 +263,6 @@ export function CommandPanel(props: CommandPanelProps) {
 
   const hasSelectedOption = timezoneOptions.some((option) => option.value === deadlineZone)
 
-  const targetClockLabel = formatTargetClock(parseResult.targetMinutesOfDay)
   const activeTargetClockLabel = formatTargetClock(activeParseResult.targetMinutesOfDay)
 
   const resolvedUtc = useMemo(() => {
@@ -230,13 +273,13 @@ export function CommandPanel(props: CommandPanelProps) {
     return DateTime.fromMillis(activeParseResult.deadlineUtcMs, { zone: 'utc' })
   }, [activeParseResult.deadlineUtcMs, activeParseResult.valid])
 
-  const resolvedZone = useMemo(() => {
+  const resolvedJst = useMemo(() => {
     if (!activeParseResult.valid || activeParseResult.deadlineUtcMs === undefined) {
       return null
     }
 
-    return DateTime.fromMillis(activeParseResult.deadlineUtcMs, { zone: activeSlot?.zone ?? deadlineZone })
-  }, [activeParseResult.deadlineUtcMs, activeParseResult.valid, activeSlot?.zone, deadlineZone])
+    return DateTime.fromMillis(activeParseResult.deadlineUtcMs, { zone: 'Asia/Tokyo' })
+  }, [activeParseResult.deadlineUtcMs, activeParseResult.valid])
 
   const workflowSteps = useMemo<WorkflowStep[]>(() => {
     const hasDateTime = Boolean(deadlineDate && deadlineTime)
@@ -276,31 +319,48 @@ export function CommandPanel(props: CommandPanelProps) {
       }
     ]
   }, [
+    activeParseResult.error,
+    activeParseResult.valid,
+    activeTargetClockLabel,
     deadlineDate,
     deadlineTime,
     deadlineZone,
     location,
-    activeParseResult.error,
-    activeParseResult.valid,
     previewMode,
-    resolvedUtc,
-    activeTargetClockLabel
+    resolvedUtc
   ])
+
+  const workflowComplete = workflowSteps.every((step) => step.state === 'done' || step.state === 'optional')
+
+  useEffect(() => {
+    if (workflowComplete && !completedWorkflowRef.current) {
+      setWorkflowCollapsed(true)
+      completedWorkflowRef.current = true
+      return
+    }
+
+    if (!workflowComplete) {
+      completedWorkflowRef.current = false
+    }
+  }, [workflowComplete])
 
   const nextAction = workflowSteps.find((step) => step.state === 'pending' || step.state === 'blocked')
 
+  const activeState: 'synced' | 'unsaved' | 'locked' = activeSlot?.locked
+    ? 'locked'
+    : draftDirty
+      ? 'unsaved'
+      : 'synced'
+
   const setDateTracked = (value: string) => {
-    markEdited()
     setDeadlineDate(value)
   }
 
   const setTimeTracked = (value: string) => {
-    markEdited()
     setDeadlineTime(value)
   }
 
   const setZoneTracked = (value: string) => {
-    markEdited()
     setDeadlineZone(value)
   }
 
@@ -309,12 +369,48 @@ export function CommandPanel(props: CommandPanelProps) {
       parseCurrentInput(deadlineDate, deadlineTime, deadlineZone) ??
       DateTime.now().setZone(deadlineZone || 'UTC')
     const next = base.plus(delta).set({ second: 0, millisecond: 0 })
-    markEdited()
     setDeadlineDate(next.toISODate() ?? deadlineDate)
     setDeadlineTime(next.toFormat('HH:mm'))
   }
 
-  const workflowStatusLabel = activeParseResult.valid ? 'active tracking' : 'active deadline invalid'
+  const commitSlotRename = () => {
+    if (!activeSlot || demoMode) {
+      return
+    }
+
+    const normalized = slotNameDraft.trim()
+    if (!normalized || normalized === activeSlot.name) {
+      setSlotNameDraft(activeSlot.name)
+      return
+    }
+
+    onRenameSlot(normalized)
+  }
+
+  const armOrDelete = () => {
+    if (demoMode) {
+      return
+    }
+
+    if (deleteArmed) {
+      onDeleteSlot()
+      setDeleteArmed(false)
+      if (deleteTimerRef.current !== null) {
+        window.clearTimeout(deleteTimerRef.current)
+        deleteTimerRef.current = null
+      }
+      return
+    }
+
+    setDeleteArmed(true)
+    if (deleteTimerRef.current !== null) {
+      window.clearTimeout(deleteTimerRef.current)
+    }
+    deleteTimerRef.current = window.setTimeout(() => {
+      setDeleteArmed(false)
+      deleteTimerRef.current = null
+    }, 2600)
+  }
 
   return (
     <section
@@ -325,20 +421,37 @@ export function CommandPanel(props: CommandPanelProps) {
 
       <div className="border-cyan-300/30 mt-2 rounded-lg border bg-black/35 p-2">
         <p className="text-cyan-200/70 text-[10px] uppercase tracking-[0.16em]">active deadline</p>
+
         {activeSlot ? (
           <>
-            <p className="text-cyan-50 mt-1 font-mono">
-              {activeSlot.name} · {activeSlot.date} {activeSlot.time} · {describeTimezone(activeSlot.zone)}
+            <p className="text-cyan-50 mt-1 font-mono text-[14px]">
+              {activeSlot.name} - {activeSlot.date} {activeSlot.time} {describeTimezone(activeSlot.zone)}
             </p>
-            <p className="text-cyan-100/72 text-[11px]">
-              target {activeTargetClockLabel} · {activeSlot.locked ? 'locked' : 'editable'}
+            <p className="text-cyan-100/78 text-[11px]">
+              = {resolvedUtc?.toFormat("yyyy-LL-dd HH:mm 'utc'") ?? '--'}
+              {' • '}
+              {resolvedJst?.toFormat("HH:mm 'jst'") ?? '--'}
             </p>
           </>
         ) : (
           <p className="mt-1 text-rose-200">no active deadline</p>
         )}
 
-        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-[0.08em] ${statusChipClass(activeState)}`}
+          >
+            {activeState === 'synced' ? 'synced' : activeState === 'unsaved' ? 'draft unsaved' : 'locked'}
+          </span>
+
+          {demoMode ? (
+            <span className="border-cyan-300/35 bg-cyan-950/30 text-cyan-100 rounded-full border px-2 py-0.5 text-[11px]">
+              demo mode
+            </span>
+          ) : null}
+        </div>
+
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto_auto]">
           <select
             className="border-cyan-400/35 text-cyan-50 h-10 rounded-md border bg-black/40 px-2 font-mono text-xs"
             value={activeSlotId}
@@ -356,6 +469,7 @@ export function CommandPanel(props: CommandPanelProps) {
             type="button"
             className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px]"
             onClick={onAddSlot}
+            disabled={demoMode}
             aria-label="new deadline slot"
           >
             <Plus size={14} />
@@ -365,6 +479,7 @@ export function CommandPanel(props: CommandPanelProps) {
             type="button"
             className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px]"
             onClick={onDuplicateSlot}
+            disabled={demoMode}
             aria-label="duplicate deadline slot"
           >
             <Copy size={14} />
@@ -374,97 +489,112 @@ export function CommandPanel(props: CommandPanelProps) {
             type="button"
             className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px]"
             onClick={onToggleLock}
+            disabled={demoMode}
             aria-label="toggle deadline lock"
           >
             {activeSlot?.locked ? <Unlock size={14} /> : <Lock size={14} />}
             {activeSlot?.locked ? 'unlock' : 'lock'}
           </button>
+          <button
+            type="button"
+            className={`btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] ${deleteArmed ? 'border-rose-300/60 text-rose-100' : ''}`}
+            onClick={armOrDelete}
+            disabled={demoMode}
+            aria-label="delete active deadline slot"
+          >
+            <Trash2 size={14} />
+            {deleteArmed ? 'confirm' : 'del'}
+          </button>
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={`btn-neon inline-flex items-center gap-1 px-2 py-1 text-[11px] ${applyDisabled ? 'opacity-60' : ''}`}
-            onClick={onApplyDraft}
-            disabled={applyDisabled}
-            aria-label="apply draft deadline"
-          >
-            <Check size={14} />
-            apply
-          </button>
-          <button
-            type="button"
-            className="btn-ghost px-2 py-1 text-[11px]"
-            onClick={onDiscardDraft}
-            disabled={!draftDirty}
-          >
-            discard
-          </button>
-          <span className="text-cyan-100/70 self-center text-[11px]">
-            {draftDirty
-              ? 'draft changed · cmd/ctrl+enter apply · esc discard'
-              : 'draft matches active deadline'}
+        <label className="mt-2 grid gap-1 text-xs">
+          <span className="text-cyan-100/75 inline-flex items-center gap-1">
+            <Pencil size={13} />
+            slot name
           </span>
-        </div>
+          <input
+            className="border-cyan-400/35 text-cyan-50 h-10 rounded-md border bg-black/40 px-2 font-mono"
+            value={slotNameDraft}
+            onChange={(event) => setSlotNameDraft(event.target.value)}
+            onBlur={commitSlotRename}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                commitSlotRename()
+              }
+            }}
+            maxLength={42}
+            disabled={demoMode || !activeSlot}
+            placeholder="deadline name"
+            aria-label="rename active deadline slot"
+          />
+        </label>
+
+        {draftDirty ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`btn-neon inline-flex items-center gap-1 px-2 py-1 text-[11px] ${applyDisabled ? 'opacity-60' : ''}`}
+              onClick={onApplyDraft}
+              disabled={applyDisabled || demoMode}
+              aria-label="apply draft deadline"
+            >
+              <Check size={14} />
+              apply
+            </button>
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1 text-[11px]"
+              onClick={onDiscardDraft}
+              disabled={demoMode}
+            >
+              discard
+            </button>
+            <span className="self-center text-[11px] text-amber-100">unsaved draft changes</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-cyan-300/25 mt-2 rounded-lg border bg-black/30 p-2">
-        <p className="text-cyan-200/70 text-[10px] uppercase tracking-[0.16em]">workflow</p>
-        <ul className="mt-1 grid gap-1.5 text-xs">
-          {workflowSteps.map((step, index) => (
-            <li className="relative pl-6" key={step.id}>
-              <span
-                className={`absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ${workflowDotClass(step.state)}`}
-              />
-              {index < workflowSteps.length - 1 ? (
-                <span className="bg-cyan-300/25 absolute left-[4px] top-[14px] h-[calc(100%-4px)] w-px" />
-              ) : null}
-              <p className={`text-[12px] ${workflowLabelClass(step.state)}`}>
-                {index + 1}. {step.label}
-              </p>
-              <p className="text-cyan-100/64 text-[11px]">{step.detail}</p>
-            </li>
-          ))}
-        </ul>
-        <p className="text-cyan-100/72 mt-1 text-[11px]">
-          next action: {nextAction ? nextAction.label : 'all set'}
-        </p>
-      </div>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-cyan-200/70 text-[10px] uppercase tracking-[0.16em]">workflow</p>
+          <button
+            type="button"
+            className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px]"
+            onClick={() => setWorkflowCollapsed((value) => !value)}
+          >
+            {workflowCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+            {workflowCollapsed ? 'expand' : 'collapse'}
+          </button>
+        </div>
 
-      <div className="bg-black/38 mt-2 rounded-lg border border-neon/40 p-2 text-xs">
-        <p className="text-cyan-200/68 text-[10px] uppercase tracking-[0.16em]">deadline tracker</p>
-        {activeParseResult.valid && resolvedUtc && resolvedZone ? (
+        {workflowCollapsed ? (
+          <p className="text-cyan-100/84 mt-1 text-[12px]">
+            status: {workflowComplete ? 'armed (all set)' : `next: ${nextAction?.label ?? 'continue setup'}`}
+          </p>
+        ) : (
           <>
-            <p className="mt-1 font-mono text-neon">
-              {workflowStatusLabel} · target {activeTargetClockLabel}
-            </p>
-            <p className="text-cyan-100/74">
-              active wall time: {activeSlot?.date ?? '--'} {activeSlot?.time ?? '--'} ·{' '}
-              {describeTimezone(activeSlot?.zone ?? deadlineZone)}
-            </p>
-            <p className="text-cyan-100/74">
-              resolved utc instant: {resolvedUtc.toFormat("yyyy-LL-dd HH:mm 'utc'")}
-            </p>
-            <p className="text-cyan-100/74">
-              offset at deadline: {formatOffset(activeParseResult.selectedOffsetMinutes)}
-            </p>
-            <p className="text-cyan-100/74">
-              zone-local at instant: {resolvedZone.toFormat('ccc, dd LLL HH:mm')}
-            </p>
-            <p className="text-cyan-100/74">
-              draft wall time: {deadlineDate} {deadlineTime} · {describeTimezone(deadlineZone)} · target{' '}
-              {targetClockLabel}
+            <ul className="mt-1 grid gap-1.5 text-xs">
+              {workflowSteps.map((step, index) => (
+                <li className="relative pl-6" key={step.id}>
+                  <span
+                    className={`absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ${workflowDotClass(step.state)}`}
+                  />
+                  {index < workflowSteps.length - 1 ? (
+                    <span className="bg-cyan-300/25 absolute left-[4px] top-[14px] h-[calc(100%-4px)] w-px" />
+                  ) : null}
+                  <p className={`text-[12px] ${workflowLabelClass(step.state)}`}>
+                    {index + 1}. {step.label}
+                  </p>
+                  <p className="text-cyan-100/64 text-[11px]">{step.detail}</p>
+                </li>
+              ))}
+            </ul>
+            <p className="text-cyan-100/72 mt-1 text-[11px]">
+              next action: {nextAction ? nextAction.label : 'all set'}
             </p>
           </>
-        ) : (
-          <p className="mt-1 text-rose-200">
-            active tracking paused:{' '}
-            {activeParseResult.error || 'complete date/time/timezone to resolve deadline instant'}
-          </p>
         )}
-        <p className="text-cyan-100/60 mt-1 text-[11px]">
-          last edit {DateTime.fromMillis(lastEditedAtMs).toFormat('HH:mm:ss')}
-        </p>
       </div>
 
       <p
@@ -490,6 +620,7 @@ export function CommandPanel(props: CommandPanelProps) {
               value={deadlineDate}
               onChange={(event) => setDateTracked(event.target.value)}
               data-debug-key="date-input"
+              disabled={demoMode}
             />
             <button
               type="button"
@@ -501,6 +632,7 @@ export function CommandPanel(props: CommandPanelProps) {
               }}
               aria-label="open calendar picker"
               data-debug-key="date-icon-btn"
+              disabled={demoMode}
             >
               <CalendarDays size={15} />
             </button>
@@ -517,6 +649,7 @@ export function CommandPanel(props: CommandPanelProps) {
               value={deadlineTime}
               onChange={(event) => setTimeTracked(event.target.value)}
               data-debug-key="time-input"
+              disabled={demoMode}
             />
             <button
               type="button"
@@ -528,6 +661,7 @@ export function CommandPanel(props: CommandPanelProps) {
               }}
               aria-label="open time picker"
               data-debug-key="time-icon-btn"
+              disabled={demoMode}
             >
               <Clock3 size={15} />
             </button>
@@ -587,7 +721,6 @@ export function CommandPanel(props: CommandPanelProps) {
                   .setZone(deadlineZone || 'UTC')
                   .plus({ day: 1 })
                   .set({ second: 0, millisecond: 0 })
-                markEdited()
                 setDeadlineDate(next.toISODate() ?? dateStringTomorrow())
                 setDeadlineTime(next.toFormat('HH:mm'))
               }}
@@ -662,7 +795,6 @@ export function CommandPanel(props: CommandPanelProps) {
               type="button"
               className="btn-ghost px-2 py-1 text-[11px]"
               onClick={() => {
-                markEdited()
                 setDeadlineDate(dateStringTomorrow())
                 setDeadlineTime('23:59')
                 setDeadlineZone(AOE_IANA_ZONE)
@@ -770,7 +902,7 @@ export function CommandPanel(props: CommandPanelProps) {
           </button>
 
           {location ? (
-            <span className="text-cyan-100/70 inline-flex items-center gap-1 self-center text-[11px]">
+            <span className="text-cyan-100/70 inline-flex gap-1 self-center text-[11px]">
               <MapPin size={12} />
               {location.label}
             </span>

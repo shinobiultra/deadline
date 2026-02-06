@@ -39,3 +39,11 @@ Reason: project-site hosting under `/<repo>/` breaks absolute asset/chunk paths 
 ## D-010: split smooth motion from expensive astro recompute cadence
 
 Reason: smooth visual drift needs rAF updates, but day/night/terminator recompute every frame wastes budget and hurts mobile performance.
+
+## D-011: detail-map interaction must not depend on remote tile completion
+
+Reason: hover/zoom/follow controls are core behavior and must stay functional under slow/offline raster tile fetch conditions (including CI).
+
+## D-012: docs screenshot baseline is a deterministic demo scenario
+
+Reason: fixed deadline/time/view state prevents screenshot drift, makes diffs meaningful, and enforces UI docs currency in CI.

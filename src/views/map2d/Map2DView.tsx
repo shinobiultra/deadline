@@ -118,6 +118,16 @@ function formatUtcOffsetFromMinutes(minutes: number): string {
   return `UTC${sign}${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
+function avoidSeamLongitude(longitude: number): number {
+  const wrapped = wrap180(longitude)
+  const seamDistance = 180 - Math.abs(wrapped)
+  if (seamDistance > 0.45) {
+    return wrapped
+  }
+
+  return wrapped >= 0 ? 179.55 : -179.55
+}
+
 function nearestLandmark(lon: number, lat: number, landmarks: Landmark[], zoom: number): Landmark | null {
   if (landmarks.length === 0) {
     return null
@@ -347,6 +357,12 @@ export function Map2DView(props: Map2DViewProps) {
 
     return solarDeadlineLongitude(deadlineTime, targetMinutesOfDay, useApparentSolar)
   }, [deadlineTime, targetMinutesOfDay, useApparentSolar])
+
+  const drawnNowSolarLongitude = useMemo(() => avoidSeamLongitude(nowSolarLongitude), [nowSolarLongitude])
+  const drawnDeadlineSolarLongitude = useMemo(
+    () => (deadlineSolarLongitude === null ? null : avoidSeamLongitude(deadlineSolarLongitude)),
+    [deadlineSolarLongitude]
+  )
 
   const civilBandsNow = useMemo(
     () => buildCivilBands(civilSampleTime, targetMinutesOfDay, civilGlowMinutes),
@@ -706,8 +722,8 @@ export function Map2DView(props: Map2DViewProps) {
         const nowLine: LineString = {
           type: 'LineString',
           coordinates: [
-            [nowSolarLongitude, -90],
-            [nowSolarLongitude, 90]
+            [drawnNowSolarLongitude, -90],
+            [drawnNowSolarLongitude, 90]
           ]
         }
 
@@ -724,7 +740,7 @@ export function Map2DView(props: Map2DViewProps) {
           for (let i = 0; i < 5; i += 1) {
             const phase = (((nowTime.getTime() / 3200 + i * 0.2) % 1) + 1) % 1
             const scanLat = -90 + phase * 180
-            const scanXY = projection([nowSolarLongitude, scanLat])
+            const scanXY = projection([drawnNowSolarLongitude, scanLat])
             if (!scanXY) {
               continue
             }
@@ -736,12 +752,12 @@ export function Map2DView(props: Map2DViewProps) {
           }
         }
 
-        if (deadlineSolarLongitude !== null) {
+        if (drawnDeadlineSolarLongitude !== null) {
           const deadlineLine: LineString = {
             type: 'LineString',
             coordinates: [
-              [deadlineSolarLongitude, -90],
-              [deadlineSolarLongitude, 90]
+              [drawnDeadlineSolarLongitude, -90],
+              [drawnDeadlineSolarLongitude, 90]
             ]
           }
 
@@ -819,6 +835,8 @@ export function Map2DView(props: Map2DViewProps) {
     civilBandsNow,
     civilGlowMinutes,
     deadlineSolarLongitude,
+    drawnDeadlineSolarLongitude,
+    drawnNowSolarLongitude,
     deadlineTime,
     dayNightSampleTime,
     hoverState?.landmarkId,
@@ -926,6 +944,7 @@ export function Map2DView(props: Map2DViewProps) {
       {hoverState ? (
         <div
           className="border-cyan-300/30 text-cyan-100 pointer-events-none absolute z-20 max-w-[min(340px,86vw)] rounded-md border bg-black/65 px-2 py-1 text-[11px] shadow-neon"
+          data-testid="map2d-hover"
           style={{
             left: Math.min(size.width - 250, hoverState.x + 14),
             top: Math.min(size.height - 62, hoverState.y + 12)
@@ -941,6 +960,10 @@ export function Map2DView(props: Map2DViewProps) {
           {hoverState?.readout ?? 'drag endlessly to wrap world · wheel to zoom · double click to zoom in'}
         </span>
         <span>{view.zoom.toFixed(2)}x</span>
+      </div>
+
+      <div className="text-cyan-100/76 pointer-events-none absolute bottom-7 right-2 rounded bg-black/45 px-2 py-1 text-[10px]">
+        mint = solar now · amber dash = solar at deadline · cyan curve = terminator
       </div>
 
       <div className="bg-black/42 text-cyan-100/74 pointer-events-none absolute left-2 top-2 rounded px-2 py-1 text-[10px]">

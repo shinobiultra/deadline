@@ -6,6 +6,7 @@
 - `gh-pages.md`: GH Pages base-path rules, asset sanity checks, smoke testing
 - `render-loop.md`: dual-clock render model, update cadences, perf profiling notes
 - `ui.md`: UX/UI behavior and interaction guide
+- `ui-controls.md`: button-by-button UI rationale and removal criteria
 - `testing.md`: quality gates, test matrix, perf checks, hooks
 - `versioning.md`: version policy and release checklist
 - `licenses.md`: licensing and attribution summary
