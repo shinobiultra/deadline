@@ -164,6 +164,24 @@ export default function Globe3DView({
   }, [])
 
   useEffect(() => {
+    if (!captureMode) {
+      return
+    }
+
+    const bridge = window as Window & {
+      __deadlineCaptureSetGlobeView?: (lat: number, lng: number, altitude?: number) => void
+    }
+
+    bridge.__deadlineCaptureSetGlobeView = (lat: number, lng: number, altitude = 2.1) => {
+      globeRef.current?.pointOfView({ lat, lng, altitude }, 0)
+    }
+
+    return () => {
+      delete bridge.__deadlineCaptureSetGlobeView
+    }
+  }, [captureMode])
+
+  useEffect(() => {
     let active = true
 
     fetch(assetUrl('data/world-110m.topo.json'))

@@ -73,3 +73,4 @@
   - detail-view deterministic capture style (no external tile dependency)
   - capture script waits for explicit 3D/detail readiness markers
 - Updated screenshot drift gate to compare pixel deltas with a strict tolerance threshold instead of raw file-byte equality.
+- Replaced rotated 3D screenshot mouse-drag capture with a deterministic capture bridge (`__deadlineCaptureSetGlobeView`) to reduce flaky frame-to-frame variation.

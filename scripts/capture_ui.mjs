@@ -36,15 +36,13 @@ await page.waitForSelector('[data-testid="globe3d-view"][data-globe-ready="1"][d
 await page.waitForTimeout(250)
 await shot('demo-3d.png')
 
-const globe = page.getByTestId('globe3d-view')
-const globeBox = await globe.boundingBox()
-if (globeBox) {
-  await page.mouse.move(globeBox.x + globeBox.width * 0.52, globeBox.y + globeBox.height * 0.48)
-  await page.mouse.down()
-  await page.mouse.move(globeBox.x + globeBox.width * 0.7, globeBox.y + globeBox.height * 0.44)
-  await page.mouse.up()
-}
-await page.waitForTimeout(180)
+await page.evaluate(() => {
+  const bridge = window
+  if (typeof bridge.__deadlineCaptureSetGlobeView === 'function') {
+    bridge.__deadlineCaptureSetGlobeView(7, -114, 1.84)
+  }
+})
+await page.waitForTimeout(140)
 await shot('demo-3d-rotated.png')
 
 await page.goto(`${baseUrl}/?demo=1&capture=1&view=detail`, { waitUntil: 'networkidle' })

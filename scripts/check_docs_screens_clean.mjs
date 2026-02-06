@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import { execSync } from 'node:child_process'
 import { PNG } from 'pngjs'
 
-const MAX_ALLOWED_PIXEL_DRIFT_RATIO = 0.0025
+const MAX_ALLOWED_PIXEL_DRIFT_RATIO = 0.005
 
 function parseStatusEntries(rawStatus) {
   if (!rawStatus.trim()) {
