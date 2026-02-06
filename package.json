@@ -12,13 +12,19 @@
     "test:unit": "vitest run tests/unit",
     "test:property": "vitest run tests/property",
     "test:e2e": "playwright test",
+    "ui:capture": "npm run build && (npm run preview -- --host 127.0.0.1 --port 4173 & PREVIEW_PID=$!; npx wait-on http://127.0.0.1:4173; node scripts/capture_ui.mjs; kill $PREVIEW_PID)",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-switch": "^1.2.6",
     "@react-three/fiber": "^9.5.0",
+    "@tsparticles/react": "^3.0.0",
+    "@tsparticles/slim": "^3.9.1",
     "clsx": "^2.1.1",
     "d3-geo": "^3.1.1",
     "framer-motion": "^12.33.0",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^0.563.0",
     "luxon": "^3.7.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -59,6 +65,7 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vite-plugin-pwa": "^1.2.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "wait-on": "^9.0.3"
   }
 }

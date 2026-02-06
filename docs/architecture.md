@@ -10,13 +10,15 @@
 - `src/views/map2d`: canvas rendering of land, day/night, deadline lines.
 - `src/views/globe3d`: lazy-loaded `react-globe.gl` scene with orbit controls, sun-driven lighting, and solar/terminator paths.
 - `src/ui`: panel, settings, toasts, counters.
+- `src/ui/DebugOverlay.tsx`: debug capture mode with overlap checks + screenshot/layout export.
+- `src/ui/NearDeadlineEffects.tsx`: staged urgency FX using `tsparticles`.
 
 ## Data Flow
 
 1. User edits deadline input.
 2. `parseDeadlineInput` produces canonical deadline instant + target minute.
 3. A 1 Hz clock tick drives derived render state for `effectiveTime` (`now` or `deadline` preview).
-4. 2D/3D views consume shared derived values (`solarLon`, `terminator`, `civilBands`).
+4. 2D/3D views consume shared derived values (`solar now/deadline lines`, `terminator`, `civil bands/polygons`).
 5. Alert engine computes pending time/crossing events and emits toasts/notifications once.
 
 ## Offline

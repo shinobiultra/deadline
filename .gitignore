@@ -15,6 +15,7 @@ coverage
 playwright-report
 test-results
 vitest-report
+artifacts
 
 # Editor directories and files
 .vscode/*

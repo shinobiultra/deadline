@@ -1,3 +1,5 @@
+import { SwitchPill } from './SwitchPill'
+
 const thresholdOptions = [1440, 360, 60, 15, 5, 1]
 
 type SettingsDrawerProps = {
@@ -14,6 +16,8 @@ type SettingsDrawerProps = {
   setEnableCrossingAlerts: (value: boolean) => void
   enableBrowserNotifications: boolean
   setEnableBrowserNotifications: (value: boolean) => void
+  reducedMotion: boolean
+  setReducedMotion: (value: boolean) => void
 }
 
 export function SettingsDrawer(props: SettingsDrawerProps) {
@@ -30,7 +34,9 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
     enableCrossingAlerts,
     setEnableCrossingAlerts,
     enableBrowserNotifications,
-    setEnableBrowserNotifications
+    setEnableBrowserNotifications,
+    reducedMotion,
+    setReducedMotion
   } = props
 
   const toggleThreshold = (value: number) => {
@@ -48,23 +54,13 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
         settings
       </summary>
       <div className="mt-3 grid gap-3">
-        <label className="flex items-center justify-between gap-2">
-          <span>apparent solar (equation-of-time)</span>
-          <input
-            type="checkbox"
-            checked={useApparentSolar}
-            onChange={(event) => setUseApparentSolar(event.target.checked)}
-          />
-        </label>
+        <SwitchPill label="apparent solar" checked={useApparentSolar} onCheckedChange={setUseApparentSolar} />
 
-        <label className="flex items-center justify-between gap-2">
-          <span>accuracy mode (timezone polygons)</span>
-          <input
-            type="checkbox"
-            checked={useTimezonePolygons}
-            onChange={(event) => setUseTimezonePolygons(event.target.checked)}
-          />
-        </label>
+        <SwitchPill
+          label="accuracy mode (timezone polygons)"
+          checked={useTimezonePolygons}
+          onCheckedChange={setUseTimezonePolygons}
+        />
         {useTimezonePolygons ? (
           <p className="text-[11px] text-cyan-100/70">
             {timezonePolygonStatus === 'ready'
@@ -95,44 +91,39 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
           <legend>alert thresholds</legend>
           <div className="flex flex-wrap gap-2">
             {thresholdOptions.map((value) => (
-              <label key={value} className="flex items-center gap-1 rounded-md border border-cyan-300/25 px-2 py-1">
-                <input
-                  type="checkbox"
-                  checked={alertThresholdMinutes.includes(value)}
-                  onChange={() => toggleThreshold(value)}
-                />
-                <span>{value >= 60 ? `${value / 60}h` : `${value}m`}</span>
-              </label>
+              <button
+                type="button"
+                key={value}
+                className={`btn-ghost px-2 py-1 ${alertThresholdMinutes.includes(value) ? 'border-neon/70 text-neon' : ''}`}
+                onClick={() => toggleThreshold(value)}
+              >
+                {value >= 60 ? `${value / 60}h` : `${value}m`}
+              </button>
             ))}
           </div>
         </fieldset>
 
-        <label className="flex items-center justify-between gap-2">
-          <span>landmark crossing alerts</span>
-          <input
-            type="checkbox"
-            checked={enableCrossingAlerts}
-            onChange={(event) => setEnableCrossingAlerts(event.target.checked)}
-          />
-        </label>
+        <SwitchPill
+          label="landmark crossing alerts"
+          checked={enableCrossingAlerts}
+          onCheckedChange={setEnableCrossingAlerts}
+        />
 
-        <label className="flex items-center justify-between gap-2">
-          <span>browser notifications (opt-in)</span>
-          <input
-            type="checkbox"
-            checked={enableBrowserNotifications}
-            onChange={async (event) => {
-              const shouldEnable = event.target.checked
-              if (shouldEnable && 'Notification' in window) {
-                const permission = await Notification.requestPermission()
-                setEnableBrowserNotifications(permission === 'granted')
-                return
-              }
+        <SwitchPill label="reduced motion" checked={reducedMotion} onCheckedChange={setReducedMotion} />
 
-              setEnableBrowserNotifications(false)
-            }}
-          />
-        </label>
+        <SwitchPill
+          label="browser notifications"
+          checked={enableBrowserNotifications}
+          onCheckedChange={async (shouldEnable) => {
+            if (shouldEnable && 'Notification' in window) {
+              const permission = await Notification.requestPermission()
+              setEnableBrowserNotifications(permission === 'granted')
+              return
+            }
+
+            setEnableBrowserNotifications(false)
+          }}
+        />
       </div>
     </details>
   )

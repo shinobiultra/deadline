@@ -8,6 +8,8 @@ Minimal OSS web app that visualizes a deadline as moving civil/solar lines over 
 - luxon (timezone-safe parsing)
 - d3-geo canvas (2d)
 - react-globe.gl / globe.gl / three (3d globe with drag/zoom orbit controls)
+- radix switch + custom segmented controls (no browser checkbox UI)
+- tsparticles (`@tsparticles/react` + slim engine) for near-deadline sparks
 - zustand + localStorage
 - vitest + fast-check + playwright
 - vite pwa (offline shell + cached static assets)
@@ -30,6 +32,7 @@ npm run lint
 npm run test
 npm run build
 npm run test:e2e
+npm run ui:capture
 ```
 
 Run production preview locally:
@@ -46,11 +49,13 @@ Then open `http://localhost:4173`.
 1. Enter a deadline date/time/timezone and confirm countdown updates.
 2. Set timezone to `Anywhere on Earth (AoE, UTC-12)` and confirm it is accepted.
 3. Toggle between `2d map` and `3d globe`.
-4. Toggle day/night, solar line, timezones.
+4. Toggle day/night, solar line, civil zones, landmarks.
 5. Set location (city chip or geolocation) and confirm distance box updates.
 6. Open `settings`, enable optional notifications, and check toast behavior.
-7. Switch preview mode from `now` to `at deadline`.
-8. On 2d map: drag to pan and use mouse wheel to zoom, then `reset view`.
+7. Switch preview mode between `now`, `deadline`, and `scrub`.
+8. On 2d map: drag horizontally for continuous wrap, wheel zoom, then `reset view` (must snap back).
+9. Use `snap` in stage header and verify PNG download.
+10. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
 
 ## optional timezone polygon accuracy mode
 
@@ -86,9 +91,10 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 1. Open deployed URL in a fresh browser profile/tab.
 2. Confirm map renders and countdown runs.
 3. Toggle to globe and confirm illuminated hemisphere + solar meridian render.
-4. Verify city search/location and settings work.
-5. Optional: enable browser notifications and verify permission prompt works.
-6. Optional offline check: load once, then disable network in devtools and refresh.
+4. Confirm 3d solar now/deadline paths are visible and interactive.
+5. Verify city search/location and settings work.
+6. Optional: enable browser notifications and verify permission prompt works.
+7. Optional offline check: load once, then disable network in devtools and refresh.
 
 ## docs
 

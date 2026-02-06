@@ -1,6 +1,6 @@
 export type AmbiguousPreference = 'earlier' | 'later'
 
-export type PreviewMode = 'now' | 'deadline'
+export type PreviewMode = 'now' | 'deadline' | 'scrub'
 
 export type LocationPoint = {
   lat: number
