@@ -6,6 +6,11 @@ type DebugOverlayProps = {
   enabled: boolean
   rootRef: RefObject<HTMLElement | null>
   onClose: () => void
+  perf?: {
+    fps: number
+    renderDriftMs: number
+    terminatorComputeMs: number
+  }
 }
 
 type DebugEntry = {
@@ -41,7 +46,7 @@ function downloadText(filename: string, content: string, type = 'application/jso
   URL.revokeObjectURL(url)
 }
 
-export function DebugOverlay({ enabled, rootRef, onClose }: DebugOverlayProps) {
+export function DebugOverlay({ enabled, rootRef, onClose, perf }: DebugOverlayProps) {
   const [entries, setEntries] = useState<DebugEntry[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
@@ -188,6 +193,12 @@ export function DebugOverlay({ enabled, rootRef, onClose }: DebugOverlayProps) {
         </div>
 
         <p className="text-cyan-100/80 text-[11px]">warnings: {warnings.length}</p>
+        {perf ? (
+          <p className="text-cyan-100/80 mt-1 text-[11px]">
+            fps {perf.fps} · render drift {perf.renderDriftMs.toFixed(2)}ms · terminator{' '}
+            {perf.terminatorComputeMs.toFixed(2)}ms
+          </p>
+        ) : null}
         <ul className="max-h-40 overflow-auto text-[11px] text-rose-200">
           {warnings.map((warning) => (
             <li key={warning}>- {warning}</li>

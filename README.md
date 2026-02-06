@@ -1,4 +1,4 @@
-# deadLINE (v0.2.1)
+# deadLINE (v0.3.0)
 
 Minimal OSS web app that visualizes a deadline as moving civil/solar lines over Earth (2D map + 3D globe). Vibe coded on [5.3-Codex release day](https://openai.com/index/introducing-gpt-5-3-codex/).
 
@@ -13,6 +13,7 @@ Minimal OSS web app that visualizes a deadline as moving civil/solar lines over 
 - zustand + localStorage
 - vitest + fast-check + playwright
 - vite pwa (offline shell + cached static assets)
+- safe deadline slots + draft/apply workflow (prevents accidental overwrites)
 
 ## local setup
 
@@ -42,6 +43,7 @@ npm run test
 npm run build
 npm run perf:report
 npm run test:e2e
+npm run test:e2e:gh-pages
 npm run ui:capture
 ```
 
@@ -53,6 +55,12 @@ npm run preview -- --host 0.0.0.0 --port 4173
 ```
 
 Then open `http://localhost:4173`.
+
+Run GH-pages subpath smoke locally:
+
+```bash
+GH_PAGES_REPO=deadline GH_PAGES_PORT=4176 npm run test:e2e:gh-pages
+```
 
 ## manual smoke checklist
 
@@ -68,6 +76,7 @@ Then open `http://localhost:4173`.
 10. In `3d globe`, drag to rotate, wheel to zoom, then use `reset orbit` to re-center.
 11. Toggle `detail zoom` and verify high-detail open-map raster mode (building-level zoom + line overlays); zooming out below world-level should auto-return to the default deadLINE view.
 12. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
+13. Validate draft/apply safety: edit date/time, confirm draft state, apply/discard, switch slot, and reload persistence.
 
 ## optional timezone polygon accuracy mode
 
@@ -116,6 +125,8 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 - spec: `docs/spec.md`
 - architecture: `docs/architecture.md`
 - deploy: `docs/deploy.md`
+- gh-pages hardening: `docs/gh-pages.md`
+- render loop/perf model: `docs/render-loop.md`
 - ui guide: `docs/ui.md`
 - testing + quality gates: `docs/testing.md`
 - versioning: `docs/versioning.md`

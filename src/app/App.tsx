@@ -21,6 +21,14 @@ import {
   parseDeadlineInput
 } from '@/features/deadline/deadlineMath'
 import { useDeadlineStore } from '@/features/deadline/store'
+import {
+  createDeadlineSlot,
+  defaultDeadlineSlot,
+  loadDeadlineSlots,
+  maxDeadlineSlots,
+  saveDeadlineSlots
+} from '@/features/deadline/slots'
+import type { AmbiguousPreference, DeadlineSlot } from '@/features/deadline/types'
 import { useLandmarks } from '@/features/landmarks/useLandmarks'
 import { computeLandmarkCrossings } from '@/features/landmarks/crossings'
 import {
@@ -28,11 +36,33 @@ import {
   solarDistanceToMeridian,
   solarLineSpeedDegreesPerHour
 } from '@/features/solar/solarMath'
+import { assetUrl } from '@/lib/assets'
 import { useIntervalNow } from '@/lib/useIntervalNow'
+import { useRenderNow } from '@/lib/useRenderNow'
 
 const Globe3DView = lazy(() => import('@/views/globe3d/Globe3DView'))
 
 type ViewMode = '2d' | '3d'
+
+type DeadlineDraft = {
+  date: string
+  time: string
+  zone: string
+  ambiguousPreference: AmbiguousPreference
+}
+
+function draftFromSlot(slot: DeadlineSlot): DeadlineDraft {
+  return {
+    date: slot.date,
+    time: slot.time,
+    zone: slot.zone,
+    ambiguousPreference: slot.ambiguousPreference
+  }
+}
+
+function slotIndexName(index: number): string {
+  return `deadline #${index + 1}`
+}
 
 function notifyIfEnabled(enabled: boolean, message: string) {
   if (!enabled || !('Notification' in window) || Notification.permission !== 'granted') {
@@ -60,10 +90,12 @@ function formatTargetClock(totalMinutes: number): string {
 
 export default function App() {
   const nowMs = useIntervalNow(1000)
+  const { nowMs: renderNowMs, fps: renderFps, driftMs: renderDriftMs } = useRenderNow(60, 30)
   const [viewMode, setViewMode] = useState<ViewMode>('2d')
   const [showDetailView, setShowDetailView] = useState(false)
   const [cityQuery, setCityQuery] = useState('')
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  const [terminatorComputeMs, setTerminatorComputeMs] = useState(0)
 
   const rootRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -72,12 +104,19 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     return params.get('debug') === '1'
   })
+  const [assetCheckError, setAssetCheckError] = useState<string | null>(null)
+  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+
+  const [slotsState, setSlotsState] = useState(() => {
+    if (typeof window === 'undefined') {
+      const slot = defaultDeadlineSlot(localZone)
+      return { activeId: slot.id, slots: [slot] }
+    }
+
+    return loadDeadlineSlots(localZone)
+  })
 
   const {
-    deadlineDate,
-    deadlineTime,
-    deadlineZone,
-    ambiguousPreference,
     location,
     showTimezones,
     showSolarTime,
@@ -93,10 +132,6 @@ export default function App() {
     enableCrossingAlerts,
     enableBrowserNotifications,
     reducedMotion,
-    setDeadlineDate,
-    setDeadlineTime,
-    setDeadlineZone,
-    setAmbiguousPreference,
     setLocation,
     setShowTimezones,
     setShowSolarTime,
@@ -120,81 +155,173 @@ export default function App() {
   const { status: timezonePolygonStatus, features: timezonePolygons } =
     useTimezonePolygons(useTimezonePolygonsMode)
 
-  const parseResult = useMemo(
-    () =>
-      parseDeadlineInput({
-        date: deadlineDate,
-        time: deadlineTime,
-        zone: deadlineZone,
-        ambiguousPreference
-      }),
-    [ambiguousPreference, deadlineDate, deadlineTime, deadlineZone]
+  const activeSlot = useMemo(
+    () => slotsState.slots.find((slot) => slot.id === slotsState.activeId) ?? slotsState.slots[0],
+    [slotsState.activeId, slotsState.slots]
   )
 
-  const nowTime = useMemo(() => new Date(nowMs), [nowMs])
+  const [draftDeadline, setDraftDeadline] = useState<DeadlineDraft>(() =>
+    activeSlot ? draftFromSlot(activeSlot) : draftFromSlot(defaultDeadlineSlot(localZone))
+  )
+
+  useEffect(() => {
+    if (!activeSlot) {
+      return
+    }
+
+    setDraftDeadline(draftFromSlot(activeSlot))
+  }, [activeSlot])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    saveDeadlineSlots(slotsState)
+  }, [slotsState])
+
+  const draftDirty = useMemo(() => {
+    if (!activeSlot) {
+      return false
+    }
+
+    return (
+      draftDeadline.date !== activeSlot.date ||
+      draftDeadline.time !== activeSlot.time ||
+      draftDeadline.zone !== activeSlot.zone ||
+      draftDeadline.ambiguousPreference !== activeSlot.ambiguousPreference
+    )
+  }, [activeSlot, draftDeadline])
+
+  useEffect(() => {
+    if (!debugMode) {
+      setAssetCheckError(null)
+      return
+    }
+
+    let active = true
+    const checkAssets = async () => {
+      const probes = [
+        assetUrl('data/world-110m.topo.json'),
+        assetUrl('textures/earth-dark.jpg'),
+        assetUrl('data/landmarks_core.json')
+      ]
+
+      for (const probe of probes) {
+        try {
+          const response = await fetch(probe, { method: 'GET' })
+          if (!response.ok) {
+            if (active) {
+              setAssetCheckError(`assets broken: ${probe} -> ${response.status}`)
+            }
+            return
+          }
+        } catch {
+          if (active) {
+            setAssetCheckError(`assets broken: ${probe} fetch failed`)
+          }
+          return
+        }
+      }
+
+      if (active) {
+        setAssetCheckError(null)
+      }
+    }
+
+    void checkAssets()
+    return () => {
+      active = false
+    }
+  }, [debugMode])
+
+  const activeParseResult = useMemo(
+    () =>
+      parseDeadlineInput({
+        date: activeSlot?.date ?? draftDeadline.date,
+        time: activeSlot?.time ?? draftDeadline.time,
+        zone: activeSlot?.zone ?? draftDeadline.zone,
+        ambiguousPreference: activeSlot?.ambiguousPreference ?? draftDeadline.ambiguousPreference
+      }),
+    [activeSlot, draftDeadline]
+  )
+
+  const draftParseResult = useMemo(
+    () =>
+      parseDeadlineInput({
+        date: draftDeadline.date,
+        time: draftDeadline.time,
+        zone: draftDeadline.zone,
+        ambiguousPreference: draftDeadline.ambiguousPreference
+      }),
+    [draftDeadline]
+  )
+
+  const visualNowMs = previewMode === 'now' ? renderNowMs : nowMs
+  const nowTime = useMemo(() => new Date(visualNowMs), [visualNowMs])
 
   const deadlineTimeDate = useMemo(() => {
-    if (!parseResult.valid || !parseResult.deadlineUtcMs) {
+    if (!activeParseResult.valid || !activeParseResult.deadlineUtcMs) {
       return null
     }
-    return new Date(parseResult.deadlineUtcMs)
-  }, [parseResult.deadlineUtcMs, parseResult.valid])
+    return new Date(activeParseResult.deadlineUtcMs)
+  }, [activeParseResult.deadlineUtcMs, activeParseResult.valid])
 
   const displayTime = useMemo(() => {
-    if (!parseResult.valid || !parseResult.deadlineUtcMs) {
-      return new Date(nowMs)
+    if (!activeParseResult.valid || !activeParseResult.deadlineUtcMs) {
+      return new Date(visualNowMs)
     }
 
     if (previewMode === 'deadline') {
-      return new Date(parseResult.deadlineUtcMs)
+      return new Date(activeParseResult.deadlineUtcMs)
     }
 
     if (previewMode === 'scrub') {
       const start = nowMs
-      const end = parseResult.deadlineUtcMs
+      const end = activeParseResult.deadlineUtcMs
       return new Date(start + (end - start) * scrubRatio)
     }
 
-    return new Date(nowMs)
-  }, [nowMs, parseResult.deadlineUtcMs, parseResult.valid, previewMode, scrubRatio])
+    return new Date(visualNowMs)
+  }, [activeParseResult.deadlineUtcMs, activeParseResult.valid, nowMs, previewMode, scrubRatio, visualNowMs])
 
   const solarLongitude = useMemo(() => {
-    if (!parseResult.valid || parseResult.targetMinutesOfDay === undefined) {
+    if (!activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined) {
       return 0
     }
 
-    return solarDeadlineLongitude(displayTime, parseResult.targetMinutesOfDay, useApparentSolar)
-  }, [displayTime, parseResult.targetMinutesOfDay, parseResult.valid, useApparentSolar])
+    return solarDeadlineLongitude(displayTime, activeParseResult.targetMinutesOfDay, useApparentSolar)
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, displayTime, useApparentSolar])
 
   const deadlineSolarLongitude = useMemo(() => {
-    if (!parseResult.valid || parseResult.targetMinutesOfDay === undefined || !deadlineTimeDate) {
+    if (!activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined || !deadlineTimeDate) {
       return null
     }
 
-    return solarDeadlineLongitude(deadlineTimeDate, parseResult.targetMinutesOfDay, useApparentSolar)
-  }, [deadlineTimeDate, parseResult.targetMinutesOfDay, parseResult.valid, useApparentSolar])
+    return solarDeadlineLongitude(deadlineTimeDate, activeParseResult.targetMinutesOfDay, useApparentSolar)
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, deadlineTimeDate, useApparentSolar])
 
   const lineSpeed = useMemo(() => {
-    if (!parseResult.valid || parseResult.targetMinutesOfDay === undefined) {
+    if (!activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined) {
       return 15
     }
 
-    return solarLineSpeedDegreesPerHour(displayTime, parseResult.targetMinutesOfDay, useApparentSolar)
-  }, [displayTime, parseResult.targetMinutesOfDay, parseResult.valid, useApparentSolar])
+    return solarLineSpeedDegreesPerHour(displayTime, activeParseResult.targetMinutesOfDay, useApparentSolar)
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, displayTime, useApparentSolar])
 
   const distance = useMemo(() => {
-    if (!location || !parseResult.valid || parseResult.targetMinutesOfDay === undefined) {
+    if (!location || !activeParseResult.valid || activeParseResult.targetMinutesOfDay === undefined) {
       return null
     }
 
     return solarDistanceToMeridian(location.lat, location.lon, solarLongitude)
-  }, [location, parseResult.targetMinutesOfDay, parseResult.valid, solarLongitude])
+  }, [activeParseResult.targetMinutesOfDay, activeParseResult.valid, location, solarLongitude])
 
   const crossingPlan = useMemo(() => {
     if (
-      !parseResult.valid ||
-      parseResult.deadlineUtcMs === undefined ||
-      parseResult.targetMinutesOfDay === undefined
+      !activeParseResult.valid ||
+      activeParseResult.deadlineUtcMs === undefined ||
+      activeParseResult.targetMinutesOfDay === undefined
     ) {
       return []
     }
@@ -202,25 +329,27 @@ export default function App() {
     return computeLandmarkCrossings({
       landmarks,
       rangeStartMs: nowMs,
-      rangeEndMs: parseResult.deadlineUtcMs,
-      targetMinutesOfDay: parseResult.targetMinutesOfDay,
+      rangeEndMs: activeParseResult.deadlineUtcMs,
+      targetMinutesOfDay: activeParseResult.targetMinutesOfDay,
       apparentSolar: useApparentSolar
     })
   }, [
+    activeParseResult.deadlineUtcMs,
+    activeParseResult.targetMinutesOfDay,
+    activeParseResult.valid,
     landmarks,
     nowMs,
-    parseResult.deadlineUtcMs,
-    parseResult.targetMinutesOfDay,
-    parseResult.valid,
     useApparentSolar
   ])
 
-  const remainingMs = parseResult.deadlineUtcMs ? parseResult.deadlineUtcMs - nowMs : Number.POSITIVE_INFINITY
+  const remainingMs = activeParseResult.deadlineUtcMs
+    ? activeParseResult.deadlineUtcMs - nowMs
+    : Number.POSITIVE_INFINITY
 
-  const deadlineZoneLabel = describeTimezone(deadlineZone)
+  const deadlineZoneLabel = describeTimezone(activeSlot?.zone ?? draftDeadline.zone)
   const targetClockLabel =
-    parseResult.valid && parseResult.targetMinutesOfDay !== undefined
-      ? formatTargetClock(parseResult.targetMinutesOfDay)
+    activeParseResult.valid && activeParseResult.targetMinutesOfDay !== undefined
+      ? formatTargetClock(activeParseResult.targetMinutesOfDay)
       : '--:--'
 
   const pushToast = useCallback((id: string, message: string) => {
@@ -237,26 +366,175 @@ export default function App() {
     }, 9_000)
   }, [])
 
+  const updateDraftField = useCallback(
+    (patch: Partial<DeadlineDraft>) => {
+      setDraftDeadline((previous) => ({
+        ...previous,
+        ...patch
+      }))
+    },
+    [setDraftDeadline]
+  )
+
+  const switchSlot = useCallback((id: string) => {
+    setSlotsState((previous) => {
+      if (!previous.slots.some((slot) => slot.id === id)) {
+        return previous
+      }
+
+      return { ...previous, activeId: id }
+    })
+  }, [])
+
+  const addNewSlot = useCallback(() => {
+    setSlotsState((previous) => {
+      if (previous.slots.length >= maxDeadlineSlots()) {
+        pushToast('slots-cap', `slot limit reached (${maxDeadlineSlots()})`)
+        return previous
+      }
+
+      const candidate = createDeadlineSlot({
+        name: slotIndexName(previous.slots.length),
+        date: draftDeadline.date,
+        time: draftDeadline.time,
+        zone: normalizeDeadlineZone(draftDeadline.zone),
+        ambiguousPreference: draftDeadline.ambiguousPreference
+      })
+
+      return {
+        activeId: candidate.id,
+        slots: [...previous.slots, candidate]
+      }
+    })
+  }, [draftDeadline, pushToast])
+
+  const duplicateActiveSlot = useCallback(() => {
+    if (!activeSlot) {
+      return
+    }
+
+    setSlotsState((previous) => {
+      if (previous.slots.length >= maxDeadlineSlots()) {
+        pushToast('slots-cap', `slot limit reached (${maxDeadlineSlots()})`)
+        return previous
+      }
+
+      const copy = createDeadlineSlot({
+        name: `${activeSlot.name} copy`,
+        date: activeSlot.date,
+        time: activeSlot.time,
+        zone: activeSlot.zone,
+        ambiguousPreference: activeSlot.ambiguousPreference,
+        locked: false
+      })
+
+      return {
+        activeId: copy.id,
+        slots: [...previous.slots, copy]
+      }
+    })
+  }, [activeSlot, pushToast])
+
+  const toggleActiveLock = useCallback(() => {
+    if (!activeSlot) {
+      return
+    }
+
+    setSlotsState((previous) => ({
+      activeId: previous.activeId,
+      slots: previous.slots.map((slot) =>
+        slot.id === previous.activeId
+          ? {
+              ...slot,
+              locked: !slot.locked,
+              updatedAtMs: Date.now()
+            }
+          : slot
+      )
+    }))
+  }, [activeSlot])
+
+  const applyDraftToActive = useCallback(() => {
+    if (!activeSlot) {
+      return
+    }
+
+    if (activeSlot.locked) {
+      pushToast('slot-locked', 'active deadline is locked')
+      return
+    }
+
+    if (!draftParseResult.valid) {
+      pushToast('slot-invalid', 'fix draft deadline before apply')
+      return
+    }
+
+    setSlotsState((previous) => ({
+      activeId: previous.activeId,
+      slots: previous.slots.map((slot) =>
+        slot.id === previous.activeId
+          ? {
+              ...slot,
+              date: draftDeadline.date,
+              time: draftDeadline.time,
+              zone: normalizeDeadlineZone(draftDeadline.zone),
+              ambiguousPreference: draftDeadline.ambiguousPreference,
+              updatedAtMs: Date.now()
+            }
+          : slot
+      )
+    }))
+  }, [activeSlot, draftDeadline, draftParseResult.valid, pushToast])
+
+  const discardDraft = useCallback(() => {
+    if (!activeSlot) {
+      return
+    }
+
+    setDraftDeadline(draftFromSlot(activeSlot))
+  }, [activeSlot])
+
   const handleDetailZoomOutExit = useCallback(() => {
     setShowDetailView(false)
     pushToast(`detail-auto-${Date.now()}`, 'zoomed out: switched back to deadLINE map')
   }, [pushToast])
 
   const [firedAlerts, setFiredAlerts] = useState<Set<string>>(() => new Set())
+  const latestNowRef = useRef(nowMs)
+  const previousRemainingRef = useRef<number | null>(null)
+  const previousNowRef = useRef<number | null>(null)
 
   useEffect(() => {
+    latestNowRef.current = nowMs
+  }, [nowMs])
+
+  useEffect(() => {
+    const nowSnapshot = latestNowRef.current
     setFiredAlerts(new Set())
-  }, [parseResult.deadlineUtcMs, parseResult.targetMinutesOfDay, useApparentSolar])
+    previousRemainingRef.current =
+      activeParseResult.deadlineUtcMs === undefined ? null : activeParseResult.deadlineUtcMs - nowSnapshot
+    previousNowRef.current = nowSnapshot
+  }, [
+    activeParseResult.deadlineUtcMs,
+    activeParseResult.targetMinutesOfDay,
+    slotsState.activeId,
+    useApparentSolar
+  ])
 
   useEffect(() => {
-    if (!parseResult.valid || parseResult.deadlineUtcMs === undefined) {
+    if (!activeParseResult.valid || activeParseResult.deadlineUtcMs === undefined) {
       return
     }
 
-    const remaining = parseResult.deadlineUtcMs - nowMs
+    const remaining = activeParseResult.deadlineUtcMs - nowMs
     if (remaining <= 0) {
+      previousRemainingRef.current = remaining
+      previousNowRef.current = nowMs
       return
     }
+
+    const previousRemaining = previousRemainingRef.current
+    const previousNow = previousNowRef.current
 
     for (const threshold of alertThresholdMinutes) {
       const alertId = `time-${threshold}`
@@ -264,7 +542,8 @@ export default function App() {
         continue
       }
 
-      if (remaining <= threshold * 60_000) {
+      const thresholdMs = threshold * 60_000
+      if (previousRemaining !== null && previousRemaining > thresholdMs && remaining <= thresholdMs) {
         const message = `deadline in ${threshold >= 60 ? `${threshold / 60}h` : `${threshold}m`}`
         pushToast(alertId, message)
         notifyIfEnabled(enableBrowserNotifications, message)
@@ -279,7 +558,12 @@ export default function App() {
           continue
         }
 
-        if (nowMs >= crossing.crossingMs && crossing.crossingMs <= parseResult.deadlineUtcMs) {
+        if (
+          previousNow !== null &&
+          previousNow < crossing.crossingMs &&
+          nowMs >= crossing.crossingMs &&
+          crossing.crossingMs <= activeParseResult.deadlineUtcMs
+        ) {
           const crossingTime = DateTime.fromMillis(crossing.crossingMs).toFormat('HH:mm:ss')
           const message = `crossed: ${crossing.landmark.name} · ${crossingTime}`
           pushToast(alertId, message)
@@ -288,33 +572,66 @@ export default function App() {
         }
       }
     }
+
+    previousRemainingRef.current = remaining
+    previousNowRef.current = nowMs
   }, [
+    activeParseResult.deadlineUtcMs,
+    activeParseResult.valid,
     alertThresholdMinutes,
     crossingPlan,
     enableBrowserNotifications,
     enableCrossingAlerts,
     firedAlerts,
     nowMs,
-    parseResult.deadlineUtcMs,
-    parseResult.valid,
     pushToast
   ])
 
   useEffect(() => {
     const onKeydown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      const isMetaCombo = event.ctrlKey || event.metaKey
+
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'd') {
         event.preventDefault()
         setDebugMode((value) => !value)
       }
 
-      if (event.key.toLowerCase() === 'z') {
+      if (key === 'z') {
         setShowDetailView((value) => !value)
+      }
+
+      if (isMetaCombo && key === 'enter') {
+        event.preventDefault()
+        applyDraftToActive()
+      }
+
+      if (event.key === 'Escape' && draftDirty) {
+        event.preventDefault()
+        discardDraft()
+      }
+
+      if (isMetaCombo && key === 'd' && !event.shiftKey) {
+        event.preventDefault()
+        duplicateActiveSlot()
+      }
+
+      if (event.altKey && !Number.isNaN(Number(key))) {
+        const index = Number(key) - 1
+        if (index >= 0 && index < slotsState.slots.length) {
+          const targetSlot = slotsState.slots[index]
+          if (!targetSlot) {
+            return
+          }
+          event.preventDefault()
+          switchSlot(targetSlot.id)
+        }
       }
     }
 
     window.addEventListener('keydown', onKeydown)
     return () => window.removeEventListener('keydown', onKeydown)
-  }, [])
+  }, [applyDraftToActive, discardDraft, draftDirty, duplicateActiveSlot, slotsState.slots, switchSlot])
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-bg text-ink" ref={rootRef}>
@@ -324,16 +641,42 @@ export default function App() {
       <div className="relative mx-auto grid max-w-[1540px] items-start gap-3 px-3 py-3 md:grid-cols-[360px_1fr]">
         <aside className="md:sticky md:top-3">
           <CommandPanel
-            deadlineDate={deadlineDate}
-            setDeadlineDate={setDeadlineDate}
-            deadlineTime={deadlineTime}
-            setDeadlineTime={setDeadlineTime}
-            deadlineZone={deadlineZone}
-            setDeadlineZone={(value) => setDeadlineZone(normalizeDeadlineZone(value))}
+            deadlineDate={draftDeadline.date}
+            setDeadlineDate={(value) => updateDraftField({ date: value })}
+            deadlineTime={draftDeadline.time}
+            setDeadlineTime={(value) => updateDraftField({ time: value })}
+            deadlineZone={draftDeadline.zone}
+            setDeadlineZone={(value) => updateDraftField({ zone: normalizeDeadlineZone(value) })}
             timezoneOptions={timezones}
-            parseResult={parseResult}
-            ambiguousPreference={ambiguousPreference}
-            setAmbiguousPreference={setAmbiguousPreference}
+            parseResult={draftParseResult}
+            activeParseResult={activeParseResult}
+            ambiguousPreference={draftDeadline.ambiguousPreference}
+            setAmbiguousPreference={(value) => updateDraftField({ ambiguousPreference: value })}
+            activeSlot={
+              activeSlot
+                ? {
+                    id: activeSlot.id,
+                    name: activeSlot.name,
+                    date: activeSlot.date,
+                    time: activeSlot.time,
+                    zone: activeSlot.zone,
+                    locked: activeSlot.locked
+                  }
+                : null
+            }
+            slots={slotsState.slots.map((slot) => ({
+              id: slot.id,
+              name: slot.name
+            }))}
+            activeSlotId={slotsState.activeId}
+            draftDirty={draftDirty}
+            onSwitchSlot={switchSlot}
+            onAddSlot={addNewSlot}
+            onDuplicateSlot={duplicateActiveSlot}
+            onToggleLock={toggleActiveLock}
+            onApplyDraft={applyDraftToActive}
+            onDiscardDraft={discardDraft}
+            applyDisabled={!draftParseResult.valid || !draftDirty || Boolean(activeSlot?.locked)}
             location={location}
             setLocation={setLocation}
             cityQuery={cityQuery}
@@ -411,13 +754,32 @@ export default function App() {
             </div>
           </header>
 
+          {debugMode && assetCheckError ? (
+            <div className="rounded-md border border-rose-300/65 bg-rose-950/45 px-2 py-1 text-xs text-rose-100">
+              {assetCheckError}
+            </div>
+          ) : null}
+
+          <div className="border-cyan-300/30 bg-black/38 text-cyan-100/88 rounded-md border px-2 py-1 text-[11px]">
+            <p className="text-cyan-50 font-mono">
+              tracking:{' '}
+              {activeSlot
+                ? `${activeSlot.name} · ${activeSlot.date} ${activeSlot.time} · ${deadlineZoneLabel}`
+                : 'no active deadline'}
+            </p>
+            <p className="text-cyan-100/75">
+              target {targetClockLabel} · {activeSlot?.locked ? 'locked' : 'editable'} ·{' '}
+              {draftDirty ? 'draft pending apply/discard' : 'draft synced'}
+            </p>
+          </div>
+
           <div className="relative h-[clamp(340px,58vh,640px)] overflow-hidden rounded-xl">
-            {parseResult.valid && parseResult.targetMinutesOfDay !== undefined ? (
+            {activeParseResult.valid && activeParseResult.targetMinutesOfDay !== undefined ? (
               showDetailView ? (
                 <DetailMapView
                   mode={viewMode}
                   nowTime={nowTime}
-                  targetMinutesOfDay={parseResult.targetMinutesOfDay}
+                  targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
                   solarNowLongitude={solarLongitude}
                   solarDeadlineLongitude={deadlineSolarLongitude}
                   location={location}
@@ -430,9 +792,9 @@ export default function App() {
                   nowTime={nowTime}
                   displayTime={displayTime}
                   deadlineTime={deadlineTimeDate}
-                  targetMinutesOfDay={parseResult.targetMinutesOfDay}
+                  targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
                   deadlineZoneLabel={deadlineZoneLabel}
-                  deadlineOffsetMinutes={parseResult.selectedOffsetMinutes}
+                  deadlineOffsetMinutes={activeParseResult.selectedOffsetMinutes}
                   showTimezones={showTimezones}
                   showSolarTime={showSolarTime}
                   showDayNight={showDayNight}
@@ -445,6 +807,7 @@ export default function App() {
                   location={location}
                   landmarks={landmarks}
                   reducedMotion={reducedMotion}
+                  onPerf={({ terminatorComputeMs: ms }) => setTerminatorComputeMs(ms)}
                 />
               ) : (
                 <Suspense
@@ -458,10 +821,10 @@ export default function App() {
                     nowTime={nowTime}
                     displayTime={displayTime}
                     deadlineTime={deadlineTimeDate}
-                    targetMinutesOfDay={parseResult.targetMinutesOfDay}
+                    targetMinutesOfDay={activeParseResult.targetMinutesOfDay}
                     targetClockLabel={targetClockLabel}
                     deadlineZoneLabel={deadlineZoneLabel}
-                    deadlineOffsetMinutes={parseResult.selectedOffsetMinutes}
+                    deadlineOffsetMinutes={activeParseResult.selectedOffsetMinutes}
                     showSolarTime={showSolarTime}
                     showDayNight={showDayNight}
                     showLandmarks={showLandmarks}
@@ -491,7 +854,7 @@ export default function App() {
           </div>
 
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            <CountdownCard nowMs={nowMs} deadlineUtcMs={parseResult.deadlineUtcMs} />
+            <CountdownCard nowMs={nowMs} deadlineUtcMs={activeParseResult.deadlineUtcMs} />
 
             <StatsStrip
               solarLongitude={solarLongitude}
@@ -535,7 +898,16 @@ export default function App() {
         onDismiss={(id) => setToasts((previous) => previous.filter((toast) => toast.id !== id))}
       />
 
-      <DebugOverlay enabled={debugMode} rootRef={rootRef} onClose={() => setDebugMode(false)} />
+      <DebugOverlay
+        enabled={debugMode}
+        rootRef={rootRef}
+        onClose={() => setDebugMode(false)}
+        perf={{
+          fps: renderFps,
+          renderDriftMs: renderDriftMs,
+          terminatorComputeMs
+        }}
+      />
     </main>
   )
 }

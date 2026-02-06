@@ -26,3 +26,15 @@ export type DeadlineParseResult = {
   selectedOffsetMinutes?: number
   candidateOffsetsMinutes?: number[]
 }
+
+export type DeadlineSlot = {
+  id: string
+  name: string
+  date: string
+  time: string
+  zone: string
+  ambiguousPreference: AmbiguousPreference
+  locked: boolean
+  createdAtMs: number
+  updatedAtMs: number
+}

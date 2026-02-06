@@ -4,12 +4,12 @@
 
 - semantic versioning (`MAJOR.MINOR.PATCH`)
 - current line: `0.x` (fast iteration, minor can include breaking changes)
-- tag each release commit (`v0.2.1`, etc.)
+- tag each release commit (`v0.3.0`, etc.)
 
 ## Current release
 
-- `v0.2.1`
-- focus: wide-layout UX, reliable manual 3D rotation behavior, and deployment doc/runbook updates
+- `v0.3.0`
+- focus: safe deadline-slot editing, GH-pages rendering hardening, and smoother render-loop cadence
 
 ## Release checklist
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { assetUrl } from '@/lib/assets'
 import type { Landmark } from './types'
 
 export function useLandmarks(): Landmark[] {
@@ -7,7 +8,7 @@ export function useLandmarks(): Landmark[] {
   useEffect(() => {
     let active = true
 
-    fetch('/data/landmarks_core.json')
+    fetch(assetUrl('data/landmarks_core.json'))
       .then((response) => response.json())
       .then((data: Landmark[]) => {
         if (active) {

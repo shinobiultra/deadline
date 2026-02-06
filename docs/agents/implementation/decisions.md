@@ -27,3 +27,15 @@ Reason: world-map interaction is better with horizontal space; avoiding grid str
 ## D-007: 3D camera should not auto-recenter every tick
 
 Reason: periodic recentering fights user drag and makes manual globe orbit feel broken.
+
+## D-008: deadline edits must use draft/apply by default
+
+Reason: live-editing the active deadline made accidental overwrites too easy for real deadline tracking.
+
+## D-009: GH Pages build must be base-path aware
+
+Reason: project-site hosting under `/<repo>/` breaks absolute asset/chunk paths and can blank map/globe rendering.
+
+## D-010: split smooth motion from expensive astro recompute cadence
+
+Reason: smooth visual drift needs rAF updates, but day/night/terminator recompute every frame wastes budget and hurts mobile performance.

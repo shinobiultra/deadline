@@ -11,6 +11,7 @@ import {
   subsolarLongitude,
   sunDirectionEcef
 } from '@/features/solar/solarMath'
+import { assetUrl } from '@/lib/assets'
 import { useElementSize } from '@/lib/useElementSize'
 
 type Globe3DViewProps = {
@@ -142,7 +143,7 @@ export default function Globe3DView({
   useEffect(() => {
     let active = true
 
-    fetch('/data/world-110m.topo.json')
+    fetch(assetUrl('data/world-110m.topo.json'))
       .then((response) => response.json())
       .then((topology) => {
         if (!active) {
@@ -177,6 +178,27 @@ export default function Globe3DView({
     }
     return solarDeadlineLongitude(deadlineTime, targetMinutesOfDay, useApparentSolar)
   }, [deadlineTime, targetMinutesOfDay, useApparentSolar])
+
+  const nowSolarLongitudeRef = useRef(nowSolarLongitude)
+  const deadlineSolarLongitudeRef = useRef(deadlineSolarLongitude)
+
+  useEffect(() => {
+    nowSolarLongitudeRef.current = nowSolarLongitude
+  }, [nowSolarLongitude])
+
+  useEffect(() => {
+    deadlineSolarLongitudeRef.current = deadlineSolarLongitude
+  }, [deadlineSolarLongitude])
+
+  const lightingSampleTime = useMemo(
+    () => new Date(Math.floor(displayTime.getTime() / 1000) * 1000),
+    [displayTime]
+  )
+
+  const terminatorSampleTime = useMemo(
+    () => new Date(Math.floor(displayTime.getTime() / 5000) * 5000),
+    [displayTime]
+  )
 
   const pathsData = useMemo<PathDatum[]>(() => {
     const paths: PathDatum[] = []
@@ -217,7 +239,7 @@ export default function Globe3DView({
       paths.push({
         id: 'terminator',
         kind: 'terminator',
-        points: buildTerminatorPolyline(displayTime, useApparentSolar).map((point) => ({
+        points: buildTerminatorPolyline(terminatorSampleTime, useApparentSolar).map((point) => ({
           lat: point.lat,
           lng: point.lon,
           altitude: 0.009
@@ -227,7 +249,14 @@ export default function Globe3DView({
     }
 
     return paths
-  }, [deadlineSolarLongitude, displayTime, nowSolarLongitude, showDayNight, showSolarTime, useApparentSolar])
+  }, [
+    deadlineSolarLongitude,
+    nowSolarLongitude,
+    showDayNight,
+    showSolarTime,
+    terminatorSampleTime,
+    useApparentSolar
+  ])
 
   const ringData = useMemo<RingDatum[]>(() => {
     if (!showSolarTime || reducedMotion) {
@@ -251,8 +280,8 @@ export default function Globe3DView({
   }, [nowSolarLongitude, reducedMotion, showSolarTime])
 
   const markerData = useMemo<MarkerDatum[]>(() => {
-    const subsolarLat = subsolarLatitude(displayTime)
-    const subsolarLon = subsolarLongitude(displayTime, useApparentSolar)
+    const subsolarLat = subsolarLatitude(lightingSampleTime)
+    const subsolarLon = subsolarLongitude(lightingSampleTime, useApparentSolar)
 
     const markers: MarkerDatum[] = [
       {
@@ -293,7 +322,7 @@ export default function Globe3DView({
     }
 
     return markers
-  }, [displayTime, landmarks, location, showLandmarks, useApparentSolar])
+  }, [landmarks, lightingSampleTime, location, showLandmarks, useApparentSolar])
 
   const labelsData = useMemo<LabelDatum[]>(() => {
     const labels: LabelDatum[] = [
@@ -345,13 +374,13 @@ export default function Globe3DView({
       return
     }
 
-    const [sunX, sunY, sunZ] = sunDirectionEcef(displayTime, useApparentSolar)
+    const [sunX, sunY, sunZ] = sunDirectionEcef(lightingSampleTime, useApparentSolar)
     const ambient = new AmbientLight('#7caeff', showDayNight ? 0.26 : 0.52)
     const directional = new DirectionalLight('#ffffff', showDayNight ? 1.6 : 0.24)
     directional.position.set(sunX * 620, sunY * 620, sunZ * 620)
 
     globe.lights([ambient, directional])
-  }, [displayTime, globeReady, showDayNight, useApparentSolar])
+  }, [globeReady, lightingSampleTime, showDayNight, useApparentSolar])
 
   useEffect(() => {
     const globe = globeRef.current as
@@ -384,25 +413,38 @@ export default function Globe3DView({
         .join(' ')
     }
 
+    const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+    const targetFps = reducedMotion ? 20 : coarsePointer ? 30 : 60
+    const frameBudgetMs = 1000 / targetFps
+    let lastCommit = 0
+
     const updatePaths = () => {
-      const nowPath = buildPath(nowSolarLongitude)
-      const deadlinePath = deadlineSolarLongitude === null ? null : buildPath(deadlineSolarLongitude)
-      setScreenPaths({ now: nowPath, deadline: deadlinePath })
+      const nowPath = buildPath(nowSolarLongitudeRef.current)
+      const deadlineLon = deadlineSolarLongitudeRef.current
+      const deadlinePath = deadlineLon === null ? null : buildPath(deadlineLon)
+      setScreenPaths((previous) => {
+        if (previous.now === nowPath && previous.deadline === deadlinePath) {
+          return previous
+        }
+
+        return { now: nowPath, deadline: deadlinePath }
+      })
+    }
+
+    let rafId = 0
+    const tick = (frameNow: number) => {
+      if (frameNow - lastCommit >= frameBudgetMs) {
+        lastCommit = frameNow
+        updatePaths()
+      }
+      rafId = requestAnimationFrame(tick)
     }
 
     updatePaths()
+    rafId = requestAnimationFrame(tick)
 
-    const timer = window.setInterval(updatePaths, reducedMotion ? 1000 : 450)
-    return () => window.clearInterval(timer)
-  }, [
-    deadlineSolarLongitude,
-    globeReady,
-    nowSolarLongitude,
-    reducedMotion,
-    showSolarTime,
-    size.height,
-    size.width
-  ])
+    return () => cancelAnimationFrame(rafId)
+  }, [globeReady, reducedMotion, showSolarTime, size.height, size.width])
 
   return (
     <div
@@ -421,7 +463,7 @@ export default function Globe3DView({
           width={size.width}
           height={size.height}
           backgroundColor="rgba(0, 0, 0, 0)"
-          globeImageUrl="/textures/earth-dark.jpg"
+          globeImageUrl={assetUrl('textures/earth-dark.jpg')}
           showAtmosphere={showDayNight}
           atmosphereColor="#6ee7ff"
           atmosphereAltitude={0.16}

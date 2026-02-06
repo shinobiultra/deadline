@@ -181,6 +181,8 @@ export function DetailMapView(props: DetailMapViewProps) {
   const initialHasLocationRef = useRef(Boolean(location))
   const initialModeRef = useRef(mode)
   const autoExitTriggeredRef = useRef(false)
+  const followTargetLonRef = useRef(solarNowLongitude)
+  const followTargetLatRef = useRef(location?.lat ?? 0)
 
   const [loaded, setLoaded] = useState(false)
   const [followLine, setFollowLine] = useState(true)
@@ -213,6 +215,14 @@ export function DetailMapView(props: DetailMapViewProps) {
   useEffect(() => {
     pointCollectionRef.current = pointCollection
   }, [pointCollection])
+
+  useEffect(() => {
+    followTargetLonRef.current = solarNowLongitude
+  }, [solarNowLongitude])
+
+  useEffect(() => {
+    followTargetLatRef.current = location?.lat ?? 0
+  }, [location?.lat])
 
   useEffect(() => {
     const container = containerRef.current
@@ -452,12 +462,25 @@ export function DetailMapView(props: DetailMapViewProps) {
       return
     }
 
-    map.easeTo({
-      center: [solarNowLongitude, location?.lat ?? 0],
-      duration: 900,
-      easing: (value) => value * (2 - value)
-    })
-  }, [followLine, loaded, location?.lat, solarNowLongitude])
+    let rafId = 0
+    const step = () => {
+      const center = map.getCenter()
+      const targetLon = followTargetLonRef.current
+      const targetLat = followTargetLatRef.current
+      const deltaLon = wrap180(targetLon - center.lng)
+
+      const nextLon = center.lng + deltaLon * 0.16
+      const nextLat = center.lat + (targetLat - center.lat) * 0.1
+      map.jumpTo({
+        center: [nextLon, nextLat]
+      })
+
+      rafId = requestAnimationFrame(step)
+    }
+
+    rafId = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(rafId)
+  }, [followLine, loaded])
 
   return (
     <div

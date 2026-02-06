@@ -1,12 +1,13 @@
 {
   "name": "deadline",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:gh-pages": "GITHUB_PAGES=true npm run build",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --cache --write .",
@@ -15,6 +16,7 @@
     "test:unit": "vitest run tests/unit",
     "test:property": "vitest run tests/property",
     "test:e2e": "playwright test",
+    "test:e2e:gh-pages": "playwright test -c playwright.gh-pages.config.ts",
     "perf:report": "node scripts/perf_report.mjs",
     "test:perf": "npm run build && npm run perf:report",
     "ui:capture": "npm run build && (npm run preview -- --host 127.0.0.1 --port 4174 --strictPort & PREVIEW_PID=$!; npx wait-on http://127.0.0.1:4174; CAPTURE_BASE_URL=http://127.0.0.1:4174 node scripts/capture_ui.mjs; kill $PREVIEW_PID)",

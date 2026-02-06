@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 - 2026-02-06
+
+- added safe deadline-slot workflow:
+  - active deadline bar with slot switch/new/duplicate/lock actions
+  - draft/apply/discard editing model and keyboard shortcuts
+  - slot persistence in localStorage with capped history
+- improved deadline clarity in stage header with active/deadline-draft status line
+- fixed alert-threshold sequencing to avoid spurious deadline threshold notifications
+- improved render smoothness/perf balance:
+  - dual-clock flow in app (`ui` 1Hz + `render` rAF)
+  - throttled heavy 2D/3D astronomy recompute cadences
+  - rAF-based globe overlay path updates
+- hardened GH Pages compatibility:
+  - env-aware Vite base for project-site deploys
+  - asset URL normalization via `import.meta.env.BASE_URL`
+  - debug-mode asset sanity checks with explicit error banner
+  - GH-pages subpath smoke tests + preview server
+- expanded CI with dedicated GH-pages rendering smoke job
+- added docs:
+  - `docs/gh-pages.md`
+  - `docs/render-loop.md`
+  - updated deploy/testing/docs index references
+
 ## 0.2.1 - 2026-02-06
 
 - changed layout to prioritize a wide, shorter map stage

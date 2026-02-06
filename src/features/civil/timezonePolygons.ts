@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
 import type { Feature, FeatureCollection, GeoJsonProperties, MultiPolygon, Polygon } from 'geojson'
 import { circularMinuteDifference } from '@/lib/geo'
+import { assetUrl } from '@/lib/assets'
 
 export type TimezonePolygonFeature = Feature<Polygon | MultiPolygon, { zoneId: string }>
 
@@ -87,7 +88,7 @@ export function civilIntensityForZone(
 let cache: TimezonePolygonFeature[] | null = null
 let inflight: Promise<TimezonePolygonFeature[] | null> | null = null
 
-export async function loadTimezonePolygonDataset(path = '/data/timezones/timezones.geojson') {
+export async function loadTimezonePolygonDataset(path = assetUrl('data/timezones/timezones.geojson')) {
   if (cache) {
     return { status: 'ready' as const, features: cache }
   }

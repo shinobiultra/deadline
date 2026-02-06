@@ -36,3 +36,17 @@
 - Added deployment runbook doc (`docs/deploy.md`) and synchronized docs index/reference links.
 - Added e2e assertion for manual 3D orbit behavior and maintained debug-layout `warnings: 0`.
 - Bumped project version to `0.2.1`.
+- Implemented safe multi-deadline slots with lock + draft/apply/discard workflow and keyboard shortcuts.
+- Added active-deadline status banner above map stage to make tracked deadline state explicit.
+- Hardened alert threshold crossing logic and removed per-tick alert reset behavior.
+- Added GH-pages subpath hardening:
+  - env-driven Vite base (`GITHUB_PAGES`, `GITHUB_PAGES_REPO`)
+  - dedicated GH-pages preview server script
+  - Playwright GH-pages smoke suite (`tests/e2e/gh-pages.spec.ts`)
+  - CI `gh-pages-smoke` job
+- Added documentation pages for GH-pages path rules and render-loop timing architecture.
+- Re-tuned render cadence:
+  - 2D heavy astro layers sampled slower while solar line stays smooth
+  - globe screen overlays moved to adaptive rAF updates
+- Ran full validation suite including hooks and GH-pages smoke.
+- Bumped project version to `0.3.0`.

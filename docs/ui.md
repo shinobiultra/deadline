@@ -9,6 +9,7 @@
 
 ## Deadline workflow (what users should see)
 
+0. choose active deadline slot (or create/duplicate one)
 1. set deadline date + time
 2. pick timezone (`local`, `utc`, `aoe`, searchable IANA)
 3. resolve UTC instant (live in tracker card)
@@ -19,11 +20,16 @@ The command panel shows both:
 
 - `workflow`: step-by-step progress status
 - `deadline tracker`: input wall time, resolved UTC instant, target clock, deadline offset
+- `active deadline`: slot picker + lock + draft/apply/discard safety state
 
 ## Controls
 
 - date/time inputs have internal picker icon buttons and reserved input padding
 - no native checkbox styling; all layer toggles use switch pills
+- draft safety controls:
+  - `apply` commits draft edits to active deadline
+  - `discard` restores draft from active deadline
+  - `lock` prevents accidental updates to active slot
 - quick adjust chips: `-1d`, `-1h`, `-15m`, `+15m`, `+1h`, `+1d`, `now+24h`
 - debug mode: `?debug=1` or `Ctrl+Shift+D`
 

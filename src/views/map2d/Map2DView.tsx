@@ -14,6 +14,7 @@ import {
   subsolarLongitude,
   utcMinutesOfDay
 } from '@/features/solar/solarMath'
+import { assetUrl } from '@/lib/assets'
 import { clamp, wrap180 } from '@/lib/geo'
 import { useElementSize } from '@/lib/useElementSize'
 
@@ -52,6 +53,7 @@ type Map2DViewProps = {
   location: LocationPoint | null
   landmarks: Landmark[]
   reducedMotion: boolean
+  onPerf?: (metrics: { terminatorComputeMs: number }) => void
 }
 
 type DragState = {
@@ -164,13 +166,15 @@ export function Map2DView(props: Map2DViewProps) {
     civilGlowMinutes,
     location,
     landmarks,
-    reducedMotion
+    reducedMotion,
+    onPerf
   } = props
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const animationRef = useRef<number | null>(null)
+  const lastPerfPushRef = useRef(0)
   const viewRef = useRef<ViewState>({ zoom: 1, offsetX: 0, offsetY: 0 })
 
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
@@ -192,7 +196,7 @@ export function Map2DView(props: Map2DViewProps) {
   useEffect(() => {
     let active = true
 
-    fetch('/data/world-110m.topo.json')
+    fetch(assetUrl('data/world-110m.topo.json'))
       .then((response) => response.json())
       .then((topology) => {
         if (!active) {
@@ -324,6 +328,13 @@ export function Map2DView(props: Map2DViewProps) {
     }
   }, [])
 
+  const civilSampleTime = useMemo(() => new Date(Math.floor(nowTime.getTime() / 1000) * 1000), [nowTime])
+
+  const dayNightSampleTime = useMemo(
+    () => new Date(Math.floor(displayTime.getTime() / 5000) * 5000),
+    [displayTime]
+  )
+
   const nowSolarLongitude = useMemo(
     () => solarDeadlineLongitude(nowTime, targetMinutesOfDay, useApparentSolar),
     [nowTime, targetMinutesOfDay, useApparentSolar]
@@ -338,8 +349,8 @@ export function Map2DView(props: Map2DViewProps) {
   }, [deadlineTime, targetMinutesOfDay, useApparentSolar])
 
   const civilBandsNow = useMemo(
-    () => buildCivilBands(nowTime, targetMinutesOfDay, civilGlowMinutes),
-    [civilGlowMinutes, nowTime, targetMinutesOfDay]
+    () => buildCivilBands(civilSampleTime, targetMinutesOfDay, civilGlowMinutes),
+    [civilGlowMinutes, civilSampleTime, targetMinutesOfDay]
   )
 
   const civilBandsDeadline = useMemo(() => {
@@ -493,6 +504,7 @@ export function Map2DView(props: Map2DViewProps) {
 
     const path = geoPath(projection, ctx)
     const wrapShifts = [-2, -1, 0, 1, 2]
+    let terminatorComputeMsLocal = 0
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, size.width, size.height)
@@ -510,8 +522,8 @@ export function Map2DView(props: Map2DViewProps) {
       ctx.fillStyle = '#071129'
       ctx.fillRect(0, 0, size.width, size.height)
 
-      const sunLon = subsolarLongitude(displayTime, useApparentSolar)
-      const sunLat = subsolarLatitude(displayTime)
+      const sunLon = subsolarLongitude(dayNightSampleTime, useApparentSolar)
+      const sunLat = subsolarLatitude(dayNightSampleTime)
       drawWrapped(() => {
         const center = projection([sunLon, sunLat])
         if (!center) {
@@ -654,7 +666,8 @@ export function Map2DView(props: Map2DViewProps) {
 
     if (showDayNight) {
       drawWrapped(() => {
-        const nightPoints = buildNightPolygon(displayTime, useApparentSolar).map((point) => [
+        const computeStart = performance.now()
+        const nightPoints = buildNightPolygon(dayNightSampleTime, useApparentSolar).map((point) => [
           point.lon,
           point.lat
         ])
@@ -670,7 +683,7 @@ export function Map2DView(props: Map2DViewProps) {
 
         const terminatorLine: LineString = {
           type: 'LineString',
-          coordinates: buildTerminatorPolyline(displayTime, useApparentSolar).map((point) => [
+          coordinates: buildTerminatorPolyline(dayNightSampleTime, useApparentSolar).map((point) => [
             point.lon,
             point.lat
           ])
@@ -684,6 +697,7 @@ export function Map2DView(props: Map2DViewProps) {
         path(terminatorLine)
         ctx.stroke()
         ctx.shadowBlur = 0
+        terminatorComputeMsLocal = performance.now() - computeStart
       })
     }
 
@@ -788,6 +802,16 @@ export function Map2DView(props: Map2DViewProps) {
         ctx.stroke()
       })
     }
+
+    if (onPerf && showDayNight) {
+      const now = performance.now()
+      if (now - lastPerfPushRef.current >= 500) {
+        lastPerfPushRef.current = now
+        onPerf({
+          terminatorComputeMs: Number(terminatorComputeMsLocal.toFixed(2))
+        })
+      }
+    }
   }, [
     brightDayLighting,
     buildProjection,
@@ -796,12 +820,13 @@ export function Map2DView(props: Map2DViewProps) {
     civilGlowMinutes,
     deadlineSolarLongitude,
     deadlineTime,
-    displayTime,
+    dayNightSampleTime,
     hoverState?.landmarkId,
     landmarks,
     location,
     nowSolarLongitude,
     nowTime,
+    civilSampleTime,
     reducedMotion,
     showDayNight,
     showLandmarks,
@@ -815,7 +840,8 @@ export function Map2DView(props: Map2DViewProps) {
     useTimezonePolygons,
     view.zoom,
     world,
-    worldWidthAtZoom
+    worldWidthAtZoom,
+    onPerf
   ])
 
   const deadlineOffsetLabel =

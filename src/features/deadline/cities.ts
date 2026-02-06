@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { assetUrl } from '@/lib/assets'
 
 export type CityRecord = {
   name: string
@@ -14,7 +15,7 @@ export function useCities(query: string): CityRecord[] {
   useEffect(() => {
     let active = true
 
-    fetch('/data/cities_ne_min.json')
+    fetch(assetUrl('data/cities_ne_min.json'))
       .then((response) => response.json())
       .then((data: CityRecord[]) => {
         if (active) {

@@ -3,8 +3,12 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const ghRepo = process.env.GITHUB_PAGES_REPO?.trim()
+const ghBase = ghRepo ? `/${ghRepo}/` : '/'
+const appBase = process.env.GITHUB_PAGES === 'true' ? ghBase : './'
+
 export default defineConfig({
-  base: './',
+  base: appBase,
   plugins: [
     react(),
     VitePWA({
@@ -17,8 +21,8 @@ export default defineConfig({
         theme_color: '#05070d',
         background_color: '#05070d',
         display: 'standalone',
-        start_url: './',
-        scope: './',
+        start_url: appBase,
+        scope: appBase,
         icons: [
           {
             src: 'vite.svg',
