@@ -2,7 +2,8 @@
 
 ## Experience model
 
-- primary layout: `command deck` left, `map stage` right
+- primary layout: `command deck` left, wide map stage right
+- secondary cards (`countdown`, `stats`, `distance`, `settings`) live under map stage
 - stage modes: `2d map`, `3d globe`, `detail zoom`
 - interaction style: lowercase labels, neon outlines, dark default, reduced-motion safe
 
@@ -36,6 +37,7 @@ The command panel shows both:
 ## 3d behavior
 
 - `react-globe.gl` orbit controls (drag rotate, wheel zoom)
+- manual orbit is sticky: user drag disables auto-orbit drift until `reset orbit`
 - sun-driven day/night lighting
 - visible solar `now` beam + deadline ghost path
 - hover/readout text explains timezone and target relation

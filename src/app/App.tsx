@@ -321,8 +321,8 @@ export default function App() {
       <div className="noise-overlay" />
       <div className="scanline-overlay" />
 
-      <div className="relative mx-auto grid max-w-[1300px] gap-3 px-3 py-3 md:grid-cols-[360px_1fr]">
-        <aside className="grid gap-3">
+      <div className="relative mx-auto grid max-w-[1540px] items-start gap-3 px-3 py-3 md:grid-cols-[360px_1fr]">
+        <aside className="md:sticky md:top-3">
           <CommandPanel
             deadlineDate={deadlineDate}
             setDeadlineDate={setDeadlineDate}
@@ -351,42 +351,6 @@ export default function App() {
             setPreviewMode={setPreviewMode}
             scrubRatio={scrubRatio}
             setScrubRatio={setScrubRatio}
-          />
-
-          <CountdownCard nowMs={nowMs} deadlineUtcMs={parseResult.deadlineUtcMs} />
-
-          <StatsStrip
-            solarLongitude={solarLongitude}
-            speedDegPerHour={lineSpeed}
-            useApparentSolar={useApparentSolar}
-            deltaMinutesFromLocation={distance?.deltaMinutes}
-            kmFromLocation={distance?.distanceKm}
-          />
-
-          <DistanceBox
-            location={location}
-            deltaMinutes={distance?.deltaMinutes}
-            deltaKm={distance?.distanceKm}
-          />
-
-          <SettingsDrawer
-            useApparentSolar={useApparentSolar}
-            setUseApparentSolar={setUseApparentSolar}
-            useTimezonePolygons={useTimezonePolygonsMode}
-            setUseTimezonePolygons={setUseTimezonePolygons}
-            brightDayLighting={brightDayLighting}
-            setBrightDayLighting={setBrightDayLighting}
-            timezonePolygonStatus={timezonePolygonStatus}
-            civilGlowMinutes={civilGlowMinutes}
-            setCivilGlowMinutes={setCivilGlowMinutes}
-            alertThresholdMinutes={alertThresholdMinutes}
-            setAlertThresholds={setAlertThresholds}
-            enableCrossingAlerts={enableCrossingAlerts}
-            setEnableCrossingAlerts={setEnableCrossingAlerts}
-            enableBrowserNotifications={enableBrowserNotifications}
-            setEnableBrowserNotifications={setEnableBrowserNotifications}
-            reducedMotion={reducedMotion}
-            setReducedMotion={setReducedMotion}
           />
         </aside>
 
@@ -447,7 +411,7 @@ export default function App() {
             </div>
           </header>
 
-          <div className="relative min-h-[420px] overflow-hidden rounded-xl">
+          <div className="relative h-[clamp(340px,58vh,640px)] overflow-hidden rounded-xl">
             {parseResult.valid && parseResult.targetMinutesOfDay !== undefined ? (
               showDetailView ? (
                 <DetailMapView
@@ -524,6 +488,44 @@ export default function App() {
                 </span>
               </div>
             ) : null}
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <CountdownCard nowMs={nowMs} deadlineUtcMs={parseResult.deadlineUtcMs} />
+
+            <StatsStrip
+              solarLongitude={solarLongitude}
+              speedDegPerHour={lineSpeed}
+              useApparentSolar={useApparentSolar}
+              deltaMinutesFromLocation={distance?.deltaMinutes}
+              kmFromLocation={distance?.distanceKm}
+            />
+
+            <DistanceBox
+              location={location}
+              deltaMinutes={distance?.deltaMinutes}
+              deltaKm={distance?.distanceKm}
+            />
+
+            <SettingsDrawer
+              useApparentSolar={useApparentSolar}
+              setUseApparentSolar={setUseApparentSolar}
+              useTimezonePolygons={useTimezonePolygonsMode}
+              setUseTimezonePolygons={setUseTimezonePolygons}
+              brightDayLighting={brightDayLighting}
+              setBrightDayLighting={setBrightDayLighting}
+              timezonePolygonStatus={timezonePolygonStatus}
+              civilGlowMinutes={civilGlowMinutes}
+              setCivilGlowMinutes={setCivilGlowMinutes}
+              alertThresholdMinutes={alertThresholdMinutes}
+              setAlertThresholds={setAlertThresholds}
+              enableCrossingAlerts={enableCrossingAlerts}
+              setEnableCrossingAlerts={setEnableCrossingAlerts}
+              enableBrowserNotifications={enableBrowserNotifications}
+              setEnableBrowserNotifications={setEnableBrowserNotifications}
+              reducedMotion={reducedMotion}
+              setReducedMotion={setReducedMotion}
+            />
           </div>
         </section>
       </div>

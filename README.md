@@ -1,4 +1,4 @@
-# deadLINE (v0.2.0)
+# deadLINE (v0.2.1)
 
 Minimal OSS web app that visualizes a deadline as moving civil/solar lines over Earth (2D map + 3D globe). Vibe coded on [5.3-Codex release day](https://openai.com/index/introducing-gpt-5-3-codex/).
 
@@ -65,8 +65,9 @@ Then open `http://localhost:4173`.
 7. Switch preview mode between `now`, `deadline`, and `scrub`.
 8. On 2d map: drag horizontally for continuous wrap, wheel zoom, then `reset view` (must snap back).
 9. Use `snap` in stage header and verify PNG download.
-10. Toggle `detail zoom` and verify high-detail open-map raster mode (building-level zoom + line overlays); zooming out below world-level should auto-return to the default deadLINE view.
-11. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
+10. In `3d globe`, drag to rotate, wheel to zoom, then use `reset orbit` to re-center.
+11. Toggle `detail zoom` and verify high-detail open-map raster mode (building-level zoom + line overlays); zooming out below world-level should auto-return to the default deadLINE view.
+12. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
 
 ## optional timezone polygon accuracy mode
 
@@ -88,6 +89,7 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 2. In GitHub repo settings, open `Pages` and set source to `GitHub Actions` (if not auto-set).
 3. Wait for workflow `deploy gh pages` to pass.
 4. Open the Pages URL from workflow output or repo Pages settings.
+5. Run online smoke checks from `docs/deploy.md`.
 
 ## deploy: vercel (free)
 
@@ -96,6 +98,7 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 3. Build command: `npm run build`.
 4. Output directory: `dist`.
 5. Deploy.
+6. Run online smoke checks from `docs/deploy.md`.
 
 ## online verification checklist
 
@@ -112,6 +115,7 @@ This repo includes `.github/workflows/deploy-gh-pages.yml`.
 - docs index: `docs/README.md`
 - spec: `docs/spec.md`
 - architecture: `docs/architecture.md`
+- deploy: `docs/deploy.md`
 - ui guide: `docs/ui.md`
 - testing + quality gates: `docs/testing.md`
 - versioning: `docs/versioning.md`

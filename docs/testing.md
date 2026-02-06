@@ -6,6 +6,8 @@
 - unit: `tests/unit/*`
 - property-based: `tests/property/*` (fast-check)
 - e2e: `tests/e2e/*` (Playwright, Chromium)
+  - includes debug-layout assertion (`warnings: 0`)
+  - includes globe manual-rotate and `reset orbit` coverage
 - UI capture: `scripts/capture_ui.mjs` screenshots for manual visual review
 - performance: `scripts/perf_report.mjs` bundle-size thresholds + artifact report
 

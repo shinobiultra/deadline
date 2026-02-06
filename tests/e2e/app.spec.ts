@@ -95,6 +95,9 @@ test('globe view keeps visible lines, supports drag/zoom and detail mode', async
     }
   }
 
+  await expect(page.getByText(/manual orbit active/i)).toBeVisible()
+  await page.getByRole('button', { name: 'reset orbit' }).click()
+
   await expect(page.getByText(/target .* in/).first()).toBeVisible()
 
   await page.getByRole('button', { name: 'detail zoom' }).click()

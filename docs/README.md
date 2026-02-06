@@ -2,6 +2,7 @@
 
 - `spec.md`: product specification
 - `architecture.md`: system architecture and module layout
+- `deploy.md`: GitHub Pages + Vercel deployment runbook and post-deploy checks
 - `ui.md`: UX/UI behavior and interaction guide
 - `testing.md`: quality gates, test matrix, perf checks, hooks
 - `versioning.md`: version policy and release checklist

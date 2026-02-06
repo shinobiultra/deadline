@@ -19,3 +19,11 @@ Reason: deterministic cross-language hook runner with fast install (`uvx`) and e
 ## D-005: performance checks are enforced via bundle-threshold script
 
 Reason: practical, deterministic perf guardrails without requiring external hosted tooling.
+
+## D-006: map stage should be wide-first, not full-height stretch
+
+Reason: world-map interaction is better with horizontal space; avoiding grid stretch prevents unusable tall empty regions.
+
+## D-007: 3D camera should not auto-recenter every tick
+
+Reason: periodic recentering fights user drag and makes manual globe orbit feel broken.

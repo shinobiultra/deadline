@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 - 2026-02-06
+
+- changed layout to prioritize a wide, shorter map stage
+- moved secondary utility cards around the map stage to reduce vertical stretch
+- fixed 3D manual rotation by removing per-tick camera recenter behavior
+- added `reset orbit` action and manual-orbit status feedback in globe view
+- extended e2e coverage for globe rotation intent and debug-layout `warnings: 0`
+- added deployment runbook: `docs/deploy.md`
+- synced docs index, UI/testing/versioning docs, and release metadata
+
 ## 0.2.0 - 2026-02-06
 
 - improved command panel UX with workflow tree + deadline tracker card

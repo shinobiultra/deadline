@@ -30,3 +30,9 @@
 - Added `prek`-based hook automation (`.pre-commit-config.yaml`) for pre-commit and pre-push gates.
 - Added docs pages for UI guide, testing/quality gates, versioning, and changelog.
 - Bumped project version to `0.2.0`.
+- Refactored layout to keep maps wide and reduce page height stretch.
+- Repositioned countdown/stats/distance/settings around map stage (under the map) for faster scanability.
+- Fixed 3D rotation lock by removing periodic camera recenter and adding `reset orbit`.
+- Added deployment runbook doc (`docs/deploy.md`) and synchronized docs index/reference links.
+- Added e2e assertion for manual 3D orbit behavior and maintained debug-layout `warnings: 0`.
+- Bumped project version to `0.2.1`.

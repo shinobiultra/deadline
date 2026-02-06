@@ -132,6 +132,7 @@ export default function Globe3DView({
   const [hoverReadout, setHoverReadout] = useState('')
   const [screenPaths, setScreenPaths] = useState<ScreenPathState>({ now: '', deadline: null })
   const [globeReady, setGlobeReady] = useState(false)
+  const [manualOrbitSeen, setManualOrbitSeen] = useState(false)
   const size = useElementSize(container)
 
   useEffect(() => {
@@ -324,7 +325,7 @@ export default function Globe3DView({
 
   useEffect(() => {
     const globe = globeRef.current
-    if (!globe) {
+    if (!globe || !globeReady) {
       return
     }
 
@@ -334,8 +335,15 @@ export default function Globe3DView({
     controls.rotateSpeed = 0.66
     controls.zoomSpeed = 0.82
     controls.enablePan = false
-    controls.autoRotate = !reducedMotion
+    controls.autoRotate = !reducedMotion && !manualOrbitSeen
     controls.autoRotateSpeed = 0.27
+  }, [globeReady, manualOrbitSeen, reducedMotion])
+
+  useEffect(() => {
+    const globe = globeRef.current
+    if (!globe || !globeReady) {
+      return
+    }
 
     const [sunX, sunY, sunZ] = sunDirectionEcef(displayTime, useApparentSolar)
     const ambient = new AmbientLight('#7caeff', showDayNight ? 0.26 : 0.52)
@@ -343,22 +351,7 @@ export default function Globe3DView({
     directional.position.set(sunX * 620, sunY * 620, sunZ * 620)
 
     globe.lights([ambient, directional])
-  }, [displayTime, reducedMotion, showDayNight, useApparentSolar])
-
-  useEffect(() => {
-    if (!globeReady) {
-      return
-    }
-
-    globeRef.current?.pointOfView(
-      {
-        lat: 20,
-        lng: nowSolarLongitude - 20,
-        altitude: 2.05
-      },
-      750
-    )
-  }, [globeReady, nowSolarLongitude])
+  }, [displayTime, globeReady, showDayNight, useApparentSolar])
 
   useEffect(() => {
     const globe = globeRef.current as
@@ -416,6 +409,11 @@ export default function Globe3DView({
       className="border-cyan-400/20 relative h-full min-h-[320px] rounded-xl border bg-black/30"
       data-testid="globe3d-view"
       ref={wrapperRef}
+      onPointerDownCapture={(event) => {
+        if (event.target instanceof HTMLCanvasElement) {
+          setManualOrbitSeen(true)
+        }
+      }}
     >
       {size.width > 0 && size.height > 0 ? (
         <Globe
@@ -593,6 +591,17 @@ export default function Globe3DView({
         </svg>
       ) : null}
 
+      <button
+        type="button"
+        className="btn-ghost absolute right-2 top-2 z-20 px-2 py-1 text-[11px]"
+        onClick={() => {
+          setManualOrbitSeen(false)
+          globeRef.current?.pointOfView({ lat: 18, lng: nowSolarLongitude - 18, altitude: 2.1 }, 620)
+        }}
+      >
+        reset orbit
+      </button>
+
       <div className="border-cyan-300/35 bg-black/56 text-cyan-100 pointer-events-none absolute left-2 top-2 rounded-md border px-2 py-1 text-[11px]">
         target {targetClockLabel} in {deadlineZoneLabel} ({formatUtcOffset(deadlineOffsetMinutes)})
         <br />
@@ -604,7 +613,9 @@ export default function Globe3DView({
 
       <div className="text-cyan-100/78 pointer-events-none absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px]">
         <span>{hoverReadout || 'drag to rotate · scroll to zoom · auto orbit enabled'}</span>
-        <span>{showLandmarks ? 'landmarks active' : 'landmarks off'}</span>
+        <span>
+          {manualOrbitSeen ? 'manual orbit active' : showLandmarks ? 'landmarks active' : 'landmarks off'}
+        </span>
       </div>
 
       <div className="ring-cyan-300/15 pointer-events-none absolute inset-0 rounded-xl ring-1" />
