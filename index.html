@@ -4,6 +4,38 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      ;(() => {
+        const isLocalHost =
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.hostname === '[::1]'
+
+        const dntEnabled =
+          navigator.doNotTrack === '1' ||
+          window.doNotTrack === '1' ||
+          navigator.doNotTrack === 'yes' ||
+          navigator.msDoNotTrack === '1'
+
+        if (isLocalHost || dntEnabled) {
+          return
+        }
+
+        const gaId = 'G-VM89N0KP5H'
+        window.dataLayer = window.dataLayer || []
+        function gtag() {
+          window.dataLayer.push(arguments)
+        }
+        window.gtag = gtag
+        gtag('js', new Date())
+        gtag('config', gaId, { anonymize_ip: true })
+
+        const script = document.createElement('script')
+        script.async = true
+        script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`
+        document.head.appendChild(script)
+      })()
+    </script>
     <title>deadline</title>
   </head>
   <body>

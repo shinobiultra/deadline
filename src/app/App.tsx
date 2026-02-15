@@ -5,6 +5,7 @@ import {
   Sparkles,
   Layers3,
   Share2,
+  Menu,
   Plus,
   Copy,
   Lock,
@@ -48,6 +49,7 @@ import {
   solarLineSpeedDegreesPerHour
 } from '@/features/solar/solarMath'
 import { assetUrl } from '@/lib/assets'
+import { initAnalytics, trackEvent } from '@/lib/analytics'
 import { formatDuration, formatSignedMinutes } from '@/lib/time'
 import { useIntervalNow } from '@/lib/useIntervalNow'
 import { useRenderNow } from '@/lib/useRenderNow'
@@ -189,10 +191,13 @@ export default function App() {
   const [infoDrawerOpen, setInfoDrawerOpen] = useState(false)
   const [layersPanelOpen, setLayersPanelOpen] = useState(false)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
+  const [topControlsOpen, setTopControlsOpen] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [timezoneSearch, setTimezoneSearch] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [locationPickArmed, setLocationPickArmed] = useState(false)
+  const [showGreetingHint, setShowGreetingHint] = useState(true)
+  const [viewportWidth, setViewportWidth] = useState(typeof window === 'undefined' ? 1280 : window.innerWidth)
   const [map2dViewState, setMap2dViewState] = useState<{
     zoom: number
     offsetX: number
@@ -329,6 +334,27 @@ export default function App() {
       draftDeadline.ambiguousPreference !== activeSlot.ambiguousPreference
     )
   }, [activeSlot, draftDeadline])
+
+  useEffect(() => {
+    initAnalytics()
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    if (demo.capture) {
+      setShowGreetingHint(true)
+      return
+    }
+
+    const timer = window.setTimeout(() => setShowGreetingHint(false), 7800)
+    return () => window.clearTimeout(timer)
+  }, [demo.capture])
 
   useEffect(() => {
     if (!debugMode) {
@@ -602,6 +628,10 @@ export default function App() {
     }, 9_000)
   }, [])
 
+  const emitEvent = useCallback((name: string, params?: Record<string, string | number | boolean>) => {
+    trackEvent(name, params)
+  }, [])
+
   const toggleUnwind = useCallback(() => {
     if (!unwindEligible || activeParseResult.deadlineUtcMs === undefined) {
       return
@@ -818,6 +848,10 @@ export default function App() {
       return
     }
 
+    emitEvent('deadline_apply', {
+      zone: normalizeDeadlineZone(draftDeadline.zone)
+    })
+
     setSlotsState((previous) => ({
       activeId: previous.activeId,
       slots: previous.slots.map((slot) =>
@@ -833,7 +867,7 @@ export default function App() {
           : slot
       )
     }))
-  }, [activeSlot, demo.enabled, draftDeadline, draftParseResult.valid, pushToast])
+  }, [activeSlot, demo.enabled, draftDeadline, draftParseResult.valid, emitEvent, pushToast])
 
   const discardDraft = useCallback(() => {
     if (!activeSlot) {
@@ -940,13 +974,14 @@ export default function App() {
 
   const shareCurrentState = useCallback(async () => {
     const shareUrl = createShareUrl()
+    emitEvent('share')
     try {
       await navigator.clipboard.writeText(shareUrl)
       pushToast(`share-${Date.now()}`, 'share link copied')
     } catch {
       pushToast(`share-fail-${Date.now()}`, shareUrl)
     }
-  }, [createShareUrl, pushToast])
+  }, [createShareUrl, emitEvent, pushToast])
 
   const [firedAlerts, setFiredAlerts] = useState<Set<string>>(() => new Set())
   const latestNowRef = useRef(effectiveNowMs)
@@ -1052,6 +1087,12 @@ export default function App() {
       }
 
       if (event.key === 'Escape') {
+        if (topControlsOpen) {
+          event.preventDefault()
+          setTopControlsOpen(false)
+          return
+        }
+
         if (deadlineDrawerOpen) {
           event.preventDefault()
           closeDeadlineDrawer()
@@ -1098,6 +1139,7 @@ export default function App() {
     duplicateActiveSlot,
     infoDrawerOpen,
     layersPanelOpen,
+    topControlsOpen,
     slotsState.slots,
     switchSlot
   ])
@@ -1127,6 +1169,15 @@ export default function App() {
     viewMode === '2d' &&
     effectiveDetailMode !== 'off' &&
     (effectiveDetailMode === 'on' || map2dViewState.zoom >= 2.7)
+
+  const compactTopControls = viewportWidth < 980
+  const compactHud = viewportWidth < 700
+
+  useEffect(() => {
+    if (!compactTopControls && topControlsOpen) {
+      setTopControlsOpen(false)
+    }
+  }, [compactTopControls, topControlsOpen])
 
   const activeStateChip: 'synced' | 'draft' | 'locked' = activeSlot?.locked
     ? 'locked'
@@ -1184,6 +1235,37 @@ export default function App() {
       }
 
   const detailStyleVariant = baseMapStyle === 'osm-light' ? 'osm-light' : 'osm-dark'
+
+  const handleViewModeChange = useCallback(
+    (next: ViewMode) => {
+      if (next === viewMode) {
+        return
+      }
+
+      emitEvent('view_mode_change', { mode: next })
+      if (next === '3d') {
+        setGlobeViewState((previous) => ({
+          ...previous,
+          lng: map2dViewState.centerLon,
+          lat: map2dViewState.centerLat
+        }))
+      }
+      setViewMode(next)
+    },
+    [emitEvent, map2dViewState.centerLat, map2dViewState.centerLon, viewMode]
+  )
+
+  const captureSnapshot = useCallback(async () => {
+    if (!stageRef.current) {
+      return
+    }
+    emitEvent('snap')
+    const canvas = await html2canvas(stageRef.current, { backgroundColor: null })
+    canvas.toBlob((blob) => {
+      if (!blob) return
+      downloadBlob(blob, 'deadline-snap.png')
+    }, 'image/png')
+  }, [emitEvent])
 
   return (
     <main
@@ -1315,25 +1397,41 @@ export default function App() {
 
           <NearDeadlineEffects remainingMs={remainingMs} reducedMotion={shouldReduceEffects} />
 
-          <p className="border-cyan-300/30 text-cyan-100/80 pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border bg-black/40 px-3 py-1 text-[11px]">
-            got a deadline? and wonder where on earth it literally is?
-          </p>
+          {showGreetingHint && !compactTopControls ? (
+            <p className="border-cyan-300/30 text-cyan-100/80 pointer-events-none absolute left-1/2 top-[var(--hud-offset-top)] z-20 -translate-x-1/2 rounded-full border bg-black/40 px-3 py-1 text-[11px] transition-opacity">
+              got a deadline? and wonder where on earth it literally is?
+            </p>
+          ) : null}
 
           <button
             type="button"
             data-testid="deadline-chip"
-            className="border-cyan-300/45 absolute left-3 top-3 z-20 max-w-[min(420px,70vw)] rounded-lg border bg-black/65 px-3 py-2 text-left shadow-neon"
-            onClick={() => setDeadlineDrawerOpen(true)}
+            data-debug-key="hud-deadline-chip"
+            className="border-cyan-300/45 absolute z-20 rounded-lg border bg-black/65 px-3 py-2 text-left shadow-neon"
+            style={{
+              left: 'var(--hud-offset-left)',
+              top: 'var(--hud-offset-top)',
+              width: compactTopControls ? 'min(68vw, 420px)' : 'min(46vw, 520px)',
+              maxWidth: compactTopControls
+                ? 'calc(100vw - var(--hud-offset-left) - var(--hud-offset-right) - 76px)'
+                : 'calc(100vw - var(--hud-offset-left) - var(--hud-offset-right) - 320px)'
+            }}
+            onClick={() => {
+              emitEvent('deadline_drawer_open')
+              setDeadlineDrawerOpen(true)
+              setQuickActionsOpen(false)
+              setTopControlsOpen(false)
+            }}
             onContextMenu={(event) => {
               event.preventDefault()
               setQuickActionsOpen((value) => !value)
             }}
           >
-            <p className="text-cyan-50 font-mono text-sm">
+            <p className="text-cyan-50 truncate font-mono text-sm">
               {activeSlot?.name ?? 'deadline'} · {activeSlot?.date ?? draftDeadline.date}{' '}
               {activeSlot?.time ?? draftDeadline.time} {deadlineZoneLabel.toLowerCase()}
             </p>
-            <p className="text-cyan-100/80 text-[11px]">
+            <p className="text-cyan-100/80 truncate text-[11px]">
               = {deadlineUtcLabel} · {deadlineJstLabel}
             </p>
             <span
@@ -1350,7 +1448,13 @@ export default function App() {
           </button>
 
           {quickActionsOpen ? (
-            <div className="border-cyan-300/45 absolute left-3 top-24 z-30 flex gap-2 rounded-md border bg-black/80 p-2 text-xs shadow-neon">
+            <div
+              className="border-cyan-300/45 absolute z-30 flex max-w-[min(86vw,420px)] gap-2 rounded-md border bg-black/80 p-2 text-xs shadow-neon"
+              style={{
+                left: 'var(--hud-offset-left)',
+                top: 'calc(var(--hud-offset-top) + 76px)'
+              }}
+            >
               <button type="button" className="btn-ghost px-2 py-1" onClick={addNewSlot}>
                 <Plus size={14} />
                 new
@@ -1370,68 +1474,142 @@ export default function App() {
             </div>
           ) : null}
 
-          <div
-            className="absolute right-3 top-3 z-20 flex items-center gap-2"
-            data-debug-key="view-toggle-row"
-          >
-            <Segmented
-              value={viewMode}
-              onChange={(next) => {
-                if (next === '3d') {
-                  setGlobeViewState((previous) => ({
-                    ...previous,
-                    lng: map2dViewState.centerLon,
-                    lat: map2dViewState.centerLat
-                  }))
-                }
-                setViewMode(next)
-              }}
-              options={[
-                { value: '2d', label: '2d' },
-                { value: '3d', label: '3d' }
-              ]}
-            />
-            <button
-              className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
-              type="button"
-              onClick={async () => {
-                if (!stageRef.current) return
-                const canvas = await html2canvas(stageRef.current, { backgroundColor: null })
-                canvas.toBlob((blob) => {
-                  if (!blob) return
-                  downloadBlob(blob, 'deadline-snap.png')
-                }, 'image/png')
+          {compactTopControls ? (
+            <div
+              className="absolute z-20"
+              data-debug-key="hud-top-controls"
+              style={{
+                right: 'var(--hud-offset-right)',
+                top: 'var(--hud-offset-top)'
               }}
             >
-              <Camera size={14} />
-              snap
-            </button>
-            <button
-              className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
-              type="button"
-              onClick={shareCurrentState}
+              <button
+                type="button"
+                data-testid="top-controls-menu"
+                className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
+                onClick={() => setTopControlsOpen((value) => !value)}
+                aria-label="open top controls"
+              >
+                <Menu size={14} />
+              </button>
+
+              {topControlsOpen ? (
+                <div className="border-cyan-300/45 bg-black/88 absolute right-0 top-11 z-30 grid min-w-[220px] gap-2 rounded-lg border p-2 shadow-neon">
+                  <Segmented
+                    value={viewMode}
+                    onChange={(next) => {
+                      handleViewModeChange(next)
+                      setTopControlsOpen(false)
+                    }}
+                    options={[
+                      { value: '2d', label: '2d' },
+                      { value: '3d', label: '3d' }
+                    ]}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn-ghost inline-flex flex-1 items-center justify-center gap-1 px-2 py-1"
+                      type="button"
+                      onClick={async () => {
+                        await captureSnapshot()
+                        setTopControlsOpen(false)
+                      }}
+                    >
+                      <Camera size={14} />
+                      snap
+                    </button>
+                    <button
+                      className="btn-ghost inline-flex flex-1 items-center justify-center gap-1 px-2 py-1"
+                      type="button"
+                      onClick={async () => {
+                        await shareCurrentState()
+                        setTopControlsOpen(false)
+                      }}
+                    >
+                      <Share2 size={14} />
+                      share
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div
+              className="absolute z-20 flex items-center gap-2"
+              data-testid="top-controls"
+              data-debug-key="hud-top-controls"
+              style={{
+                right: 'var(--hud-offset-right)',
+                top: 'var(--hud-offset-top)'
+              }}
             >
-              <Share2 size={14} />
-              share
-            </button>
-          </div>
+              <Segmented
+                value={viewMode}
+                onChange={handleViewModeChange}
+                options={[
+                  { value: '2d', label: '2d' },
+                  { value: '3d', label: '3d' }
+                ]}
+              />
+              <button
+                className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
+                type="button"
+                onClick={captureSnapshot}
+              >
+                <Camera size={14} />
+                snap
+              </button>
+              <button
+                className="btn-ghost inline-flex items-center gap-1 px-2 py-1"
+                type="button"
+                onClick={shareCurrentState}
+              >
+                <Share2 size={14} />
+                share
+              </button>
+            </div>
+          )}
 
           <button
             type="button"
             data-testid="countdown-hud"
-            className="absolute bottom-3 left-3 z-20 rounded-lg border border-neon/55 bg-black/65 px-3 py-2 text-left shadow-neon"
+            data-debug-key="hud-countdown"
+            className={`absolute z-20 rounded-lg border border-neon/55 bg-black/65 text-left shadow-neon ${compactHud ? 'px-2 py-1.5' : 'px-3 py-2'}`}
+            style={{
+              left: 'var(--hud-offset-left)',
+              bottom: 'var(--hud-offset-bottom)',
+              width: compactHud ? 'min(56vw, 220px)' : 'min(360px, 35vw)',
+              maxWidth: 'calc(100vw - var(--hud-offset-left) - var(--hud-offset-right) - 104px)'
+            }}
             onClick={() => setInfoDrawerOpen((value) => !value)}
           >
-            <p className="font-mono text-lg text-neon">{countdownLabel}</p>
-            <p className="text-cyan-100/75 text-[11px]">deadline instant: {deadlineUtcLabel}</p>
+            <p className={`font-mono text-neon ${compactHud ? 'text-base' : 'text-lg'}`}>{countdownLabel}</p>
+            <p className="text-cyan-100/75 truncate text-[11px]">deadline instant: {deadlineUtcLabel}</p>
           </button>
 
-          <div className="absolute bottom-3 right-3 z-20">
+          <div
+            className="absolute z-20"
+            data-debug-key="hud-layers"
+            style={{
+              right: 'var(--hud-offset-right)',
+              bottom: 'var(--hud-offset-bottom)'
+            }}
+          >
             <button
               type="button"
               data-testid="layers-button"
               className="btn-neon inline-flex items-center gap-1 px-3 py-2"
-              onClick={() => setLayersPanelOpen((value) => !value)}
+              onClick={() => {
+                setQuickActionsOpen(false)
+                setTopControlsOpen(false)
+                setLayersPanelOpen((value) => {
+                  const next = !value
+                  if (next) {
+                    emitEvent('layers_open')
+                  }
+                  return next
+                })
+              }}
             >
               <Layers3 size={15} />
               layers
@@ -1446,7 +1624,10 @@ export default function App() {
                 <div className="mt-1" data-testid="base-style-segmented">
                   <Segmented
                     value={baseMapStyle}
-                    onChange={setBaseMapStyle}
+                    onChange={(style) => {
+                      setBaseMapStyle(style)
+                      emitEvent('style_change', { style })
+                    }}
                     options={[
                       { value: 'deadline-dark', label: 'deadLINE dark' },
                       { value: 'osm-light', label: 'osm light' },
@@ -1463,6 +1644,10 @@ export default function App() {
                     onCheckedChange={(value) => {
                       if (!demoOverridesEnabled) {
                         setShowSolarTime(value)
+                        emitEvent('layer_toggle', {
+                          layer: 'solar_lines',
+                          enabled: value
+                        })
                       }
                     }}
                   />
@@ -1472,6 +1657,10 @@ export default function App() {
                     onCheckedChange={(value) => {
                       if (!demoOverridesEnabled) {
                         setShowTimezones(value)
+                        emitEvent('layer_toggle', {
+                          layer: 'civil_timezones',
+                          enabled: value
+                        })
                       }
                     }}
                   />
@@ -1481,6 +1670,10 @@ export default function App() {
                     onCheckedChange={(value) => {
                       if (!demoOverridesEnabled) {
                         setShowDayNight(value)
+                        emitEvent('layer_toggle', {
+                          layer: 'terminator',
+                          enabled: value
+                        })
                       }
                     }}
                   />
@@ -1490,6 +1683,10 @@ export default function App() {
                     onCheckedChange={(value) => {
                       if (!demoOverridesEnabled) {
                         setShowLandmarks(value)
+                        emitEvent('layer_toggle', {
+                          layer: 'landmarks',
+                          enabled: value
+                        })
                       }
                     }}
                   />
@@ -1536,15 +1733,28 @@ export default function App() {
           </div>
 
           {locationPickArmed ? (
-            <div className="border-cyan-300/45 text-cyan-50 absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-md border bg-black/75 px-3 py-1 text-xs shadow-neon">
+            <div
+              className="border-cyan-300/45 text-cyan-50 absolute left-1/2 z-30 -translate-x-1/2 rounded-md border bg-black/75 px-3 py-1 text-xs shadow-neon"
+              style={{
+                top: compactTopControls
+                  ? 'calc(var(--hud-offset-top) + 54px)'
+                  : 'calc(var(--hud-offset-top) + 66px)'
+              }}
+            >
               pick on map armed: click map/globe to set location
             </div>
           ) : null}
 
           {unwindEligible ? (
             <div
-              className="border-cyan-300/35 absolute bottom-20 left-3 z-20 rounded-md border bg-black/65 px-2 py-2 text-[11px]"
+              className="border-cyan-300/35 absolute z-20 rounded-md border bg-black/65 px-2 py-2 text-[11px]"
               data-testid="unwind-controls"
+              style={{
+                left: 'var(--hud-offset-left)',
+                bottom: compactHud
+                  ? 'calc(var(--hud-offset-bottom) + 72px)'
+                  : 'calc(var(--hud-offset-bottom) + 88px)'
+              }}
             >
               <div className="flex items-center gap-1">
                 <button
@@ -1575,7 +1785,15 @@ export default function App() {
           ) : null}
 
           {remainingMs <= 60 * 60_000 && remainingMs > 0 ? (
-            <div className="pointer-events-none absolute bottom-3 right-24 rounded-md border border-amber-300/45 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-100">
+            <div
+              className="pointer-events-none absolute rounded-md border border-amber-300/45 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-100"
+              style={{
+                right: compactHud
+                  ? 'calc(var(--hud-offset-right) + 72px)'
+                  : 'calc(var(--hud-offset-right) + 84px)',
+                bottom: 'var(--hud-offset-bottom)'
+              }}
+            >
               <span className="inline-flex items-center gap-1">
                 <Sparkles size={13} />
                 deadline pressure rising
@@ -1593,7 +1811,11 @@ export default function App() {
               onClick={closeDeadlineDrawer}
             />
             <aside
-              className="border-cyan-300/40 text-cyan-100 bg-black/92 absolute right-2 top-2 h-[calc(100%-1rem)] w-[min(420px,92vw)] overflow-auto rounded-xl border p-3 shadow-neon"
+              className="border-cyan-300/40 text-cyan-100 bg-black/92 absolute h-[calc(100%-var(--hud-offset-top)-var(--hud-offset-bottom))] w-[min(420px,92vw)] overflow-auto rounded-xl border p-3 shadow-neon"
+              style={{
+                right: 'var(--hud-offset-right)',
+                top: 'var(--hud-offset-top)'
+              }}
               data-testid="deadline-drawer"
             >
               <div className="mb-2 flex items-center justify-between">
@@ -2002,7 +2224,13 @@ export default function App() {
 
         {infoDrawerOpen ? (
           <aside
-            className="border-cyan-300/40 text-cyan-100 bg-black/88 absolute bottom-3 left-3 z-30 w-[min(420px,88vw)] rounded-xl border p-3 shadow-neon"
+            className="border-cyan-300/40 text-cyan-100 bg-black/88 absolute z-30 w-[min(420px,88vw)] rounded-xl border p-3 shadow-neon"
+            style={{
+              left: 'var(--hud-offset-left)',
+              bottom: compactHud
+                ? 'calc(var(--hud-offset-bottom) + 68px)'
+                : 'calc(var(--hud-offset-bottom) + 86px)'
+            }}
             data-testid="info-drawer"
           >
             <div className="mb-2 flex items-center justify-between">

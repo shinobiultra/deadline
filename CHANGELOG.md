@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.1 - 2026-02-15
+
+- added privacy-aware analytics integration for production:
+  - GA4 wiring for `G-VM89N0KP5H`
+  - local/dev and Do-Not-Track sessions are excluded
+  - event tracking added for `view_mode_change`, `deadline_drawer_open`, `deadline_apply`, `layers_open`, `layer_toggle`, `style_change`, `snap`, `share`
+- fixed corner overlap regressions with an edge-safe HUD system:
+  - safe-area CSS offsets (`env(safe-area-inset-*)`) applied to all 4 always-visible surfaces
+  - top-right controls collapse into a compact menu on narrow widths
+  - countdown HUD width clamps to avoid collision with layers button
+  - onboarding greeting now auto-fades and hides on compact layouts
+- improved map/globe hover readability and edge behavior:
+  - 2d tooltip now reports civil/target/solar time in human-readable format
+  - 2d and 3d hover tooltips clamp away from viewport edges
+  - reduced civil band fill intensity to keep line hierarchy clear
+- hardened test harness and GH Pages CI reliability:
+  - added viewport-matrix overlap assertions (1920x1080, 1440x900, 1280x720, 390x844)
+  - stabilized GH-pages smoke tests with deterministic storage reset and network-idle waits
+  - disabled service-worker registration under Playwright (`navigator.webdriver`) to prevent e2e detach/reload flake
+- refreshed deterministic UI captures in `docs/screens/*`
+
 ## 0.4.0 - 2026-02-06
 
 - breaking UI refactor to map-first architecture:

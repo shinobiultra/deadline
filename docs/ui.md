@@ -9,7 +9,10 @@
   - `layers` button (bottom-right)
   - `countdown hud` (bottom-left)
 - all other controls are in drawers/popovers
-- opening line remains visible: `got a deadline? and wonder where on earth it literally is?`
+- opening line is onboarding-only (`got a deadline? and wonder where on earth it literally is?`) and fades out automatically
+- corner HUD uses safe-area offsets and viewport collision rules:
+  - on narrow widths, top-right cluster collapses to a compact menu trigger
+  - countdown width clamps to preserve separation from layers button
 
 ## Primary Surfaces
 
@@ -24,6 +27,7 @@
 - segmented: `2d`, `3d`
 - actions: `snap`, `share`
 - switching keeps timeline/layer state and uses stored 2d/globe focus context
+- compact behavior: under narrow width, cluster becomes a single menu button to prevent edge overlap
 
 ### layers panel
 

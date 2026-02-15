@@ -471,6 +471,9 @@ export function Map2DView(props: Map2DViewProps) {
       const deltaToTarget = signedCircularMinuteDelta(targetMinutesOfDay, localMinutes)
       const targetClock = formatClock(targetMinutesOfDay)
       const deltaText = `${deltaToTarget >= 0 ? '+' : '-'}${Math.abs(Math.round(deltaToTarget))}m`
+      const solarDeltaFromNowMinutes = Math.round(wrap180(lon - nowSolarLongitude) * 4)
+      const solarMinutes = targetMinutesOfDay + solarDeltaFromNowMinutes
+      const solarClock = formatClock(solarMinutes)
       const hoverLandmark = showLandmarks ? nearestLandmark(lon, lat, landmarks, viewRef.current.zoom) : null
 
       if (hoverLandmark) {
@@ -479,7 +482,7 @@ export function Map2DView(props: Map2DViewProps) {
           y,
           landmarkId: hoverLandmark.id,
           readout: `cross candidate: ${hoverLandmark.name}`,
-          detail: `${hoverLandmark.lat.toFixed(2)}°, ${hoverLandmark.lon.toFixed(2)}° · target ${targetClock}`
+          detail: `${hoverLandmark.lat.toFixed(2)}°, ${hoverLandmark.lon.toFixed(2)}° · civil ${localClock} · solar ${solarClock}`
         })
         return
       }
@@ -490,7 +493,7 @@ export function Map2DView(props: Map2DViewProps) {
         x,
         y,
         readout: `lon ${lon.toFixed(1)}° · lat ${lat.toFixed(1)}° · ${zoneLabel}`,
-        detail: `local ${localClock} · target ${targetClock} (${deltaText}) · solar now ${nowSolarLongitude.toFixed(1)}°`
+        detail: `civil ${localClock} · target ${targetClock} (${deltaText}) · solar ${solarClock}`
       })
     },
     [buildProjection, displayTime, landmarks, nowSolarLongitude, showLandmarks, targetMinutesOfDay]
@@ -714,7 +717,7 @@ export function Map2DView(props: Map2DViewProps) {
               civilGlowMinutes
             )
             if (intensityNow !== null) {
-              const opacity = 0.08 + intensityNow * 0.24
+              const opacity = 0.03 + intensityNow * 0.13
               ctx.fillStyle = `rgba(124, 255, 178, ${opacity.toFixed(3)})`
               ctx.beginPath()
               path(zoneFeature.geometry)
@@ -742,7 +745,7 @@ export function Map2DView(props: Map2DViewProps) {
       } else {
         drawWrapped(() => {
           for (const band of civilBandsNow) {
-            const opacity = 0.08 + band.intensity * 0.22
+            const opacity = 0.03 + band.intensity * 0.12
             const fill = `rgba(124, 255, 178, ${opacity.toFixed(3)})`
 
             for (const segment of segmentBand(band.startLongitude, band.endLongitude)) {
@@ -1058,8 +1061,11 @@ export function Map2DView(props: Map2DViewProps) {
           className="border-cyan-300/30 text-cyan-100 pointer-events-none absolute z-20 max-w-[min(340px,86vw)] rounded-md border bg-black/65 px-2 py-1 text-[11px] shadow-neon"
           data-testid="map2d-hover"
           style={{
-            left: Math.min(size.width - 250, hoverState.x + 14),
-            top: Math.min(size.height - 62, hoverState.y + 12)
+            left: clamp(hoverState.x + 14, 12, Math.max(12, size.width - 292)),
+            top:
+              hoverState.y > size.height * 0.62
+                ? Math.max(12, hoverState.y - 58)
+                : clamp(hoverState.y + 12, 12, Math.max(12, size.height - 76))
           }}
         >
           <p className="text-cyan-50 font-mono">{hoverState.readout}</p>

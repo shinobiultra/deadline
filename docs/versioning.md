@@ -4,12 +4,12 @@
 
 - semantic versioning (`MAJOR.MINOR.PATCH`)
 - current line: `0.x` (fast iteration, minor can include breaking changes)
-- tag each release commit (`v0.4.0`, etc.)
+- tag each release commit (`v0.4.1`, etc.)
 
 ## Current release
 
-- `v0.4.0`
-- focus: breaking map-first UI architecture (4 always-visible surfaces), drawer-based workflows, updated e2e/gh-pages gates
+- `v0.4.1`
+- focus: analytics instrumentation (prod+DNT aware), edge-safe HUD/collision fixes, multi-viewport overlap tests, GH-pages smoke stability hardening
 
 ## Release checklist
 

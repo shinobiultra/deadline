@@ -1,7 +1,7 @@
 # Status
 
-- Version: `0.4.0`.
-- Scope: map-first v1 UX refactor (breaking), drawer-based workflows, layers panel controls, 3D tooltip/terminator band, and refreshed CI/e2e/gh-pages coverage.
+- Version: `0.4.1`.
+- Scope: map-first v1.1 hardening (edge-safe HUD + analytics), drawer-based workflows, layers panel controls, 3D tooltip/terminator band, and refreshed CI/e2e/gh-pages coverage.
 - Verification gates:
   - `npm run format:check`
   - `npm run lint`
@@ -17,6 +17,8 @@
 - 3D globe: `react-globe.gl` with hover civil/solar/delta tooltip, cursor-oriented dolly zoom, and visible solar/terminator paths.
 - Detail lens: MapLibre raster lens controlled from layers (`auto|off|on`) with minimal overlay UI.
 - Layout: full-screen map-first shell with only deadline chip, mode cluster, layers button, and countdown HUD always visible.
+- Edge safety: safe-area offsets for all corner HUD surfaces + narrow-screen top-controls collapse.
+- Analytics: GA4 (`G-VM89N0KP5H`) in production, DNT-aware, with key interaction events.
 - Deadline safety: slot manager + draft/apply/discard + slot lock to prevent accidental overwrites.
 - Debug tooling: overlap detector + screenshot/layout export.
 - GH-pages safety: base-path aware build + runtime asset probes + CI subpath smoke tests.

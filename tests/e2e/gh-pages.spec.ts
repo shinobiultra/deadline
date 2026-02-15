@@ -3,11 +3,17 @@ import { expect, test } from '@playwright/test'
 test('gh pages build renders 2d map assets with non-empty canvas pixels', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+  })
 
   await page.goto('/?debug=1')
+  await page.waitForLoadState('networkidle')
 
   const map2d = page.getByTestId('map2d-view')
   await expect(map2d).toBeVisible()
+  await expect(map2d.locator('canvas')).toBeVisible()
   await expect(page.getByText(/assets broken/i)).toHaveCount(0)
 
   const canvasHasContent = await map2d.locator('canvas').evaluate((canvas) => {
@@ -41,8 +47,13 @@ test('gh pages build renders 2d map assets with non-empty canvas pixels', async 
 test('gh pages build creates webgl globe context and visible line overlays', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+  })
 
   await page.goto('/')
+  await page.waitForLoadState('networkidle')
   await page.getByRole('button', { name: '3d', exact: true }).click()
 
   const globe = page.getByTestId('globe3d-view')

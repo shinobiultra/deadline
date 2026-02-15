@@ -11,6 +11,7 @@
   - includes layers-panel toggles + detail-lens flow coverage
   - includes 2d/detail cursor-anchored zoom assertions
   - includes 3d tooltip fields (civil/solar/delta) + mode switching coverage
+  - includes edge-safe HUD overlap matrix (`1920x1080`, `1440x900`, `1280x720`, `390x844`)
   - includes debug-layout assertion (`warnings: 0`)
   - includes long-horizon (`>24h`) unwind controls coverage
   - includes GH-pages subpath smoke (`tests/e2e/gh-pages.spec.ts` via dedicated config)

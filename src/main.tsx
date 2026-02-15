@@ -4,7 +4,12 @@ import { registerSW } from 'virtual:pwa-register'
 import App from './App'
 import './index.css'
 
-registerSW({ immediate: true })
+const shouldRegisterSw =
+  typeof window !== 'undefined' && typeof navigator !== 'undefined' && !navigator.webdriver
+
+if (shouldRegisterSw) {
+  registerSW({ immediate: true })
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

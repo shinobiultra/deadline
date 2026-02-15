@@ -94,3 +94,37 @@
 - Rebuilt Playwright suite for map-first architecture and revalidated GH-pages smoke tests.
 - Refreshed deterministic docs screenshots after redesign (`npm run ui:capture`).
 - Bumped project version to `0.4.0`.
+
+## 2026-02-15
+
+- Added analytics integration for GA4 (`G-VM89N0KP5H`) with privacy guardrails:
+  - production-only behavior
+  - localhost/dev exclusion
+  - Do-Not-Track respect
+  - tracked core interaction events (`view_mode_change`, `deadline_drawer_open`, `deadline_apply`, `layers_open`, `layer_toggle`, `style_change`, `snap`, `share`)
+- Implemented edge-safe HUD layout system:
+  - CSS safe-area variables (`env(safe-area-inset-*)`)
+  - viewport-aware top-right controls collapse into compact menu on narrow screens
+  - countdown width clamps to prevent overlap with layers button
+  - greeting tagline changed to onboarding hint (auto-fade + hidden on compact viewports)
+- Improved hover readability/usability:
+  - 2d tooltip wording now focuses on civil/target/solar time (instead of degree-heavy copy)
+  - 2d and 3d tooltips clamp from viewport edges
+  - reduced civil highlight opacity to keep line hierarchy cleaner
+- Hardened test harness:
+  - added multi-viewport HUD overlap assertions (`1920x1080`, `1440x900`, `1280x720`, `390x844`)
+  - stabilized GH-pages smoke tests with deterministic storage reset + network-idle waits
+  - set GH-pages Playwright workers to `1` for stability
+  - disabled SW registration during Playwright runs (`navigator.webdriver`)
+- Regenerated deterministic docs screenshots (`npm run ui:capture`).
+- Validation run:
+  - `npm run format:check`
+  - `npm run lint`
+  - `npm run typecheck`
+  - `npm run test:unit`
+  - `npm run test:property`
+  - `npm run build`
+  - `npm run test:e2e`
+  - `npm run test:e2e:gh-pages`
+  - `npm run ui:capture`
+- Bumped project version to `0.4.1`.

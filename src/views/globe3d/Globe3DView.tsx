@@ -918,8 +918,12 @@ export default function Globe3DView({
           className="border-cyan-300/45 text-cyan-50 pointer-events-none absolute z-20 rounded-md border bg-black/75 px-2 py-1 text-[11px] shadow-neon"
           data-testid="globe-hover-tooltip"
           style={{
-            left: Math.max(8, Math.min(size.width - 230, hoverTooltip.x + 14)),
-            top: Math.max(8, Math.min(size.height - 88, hoverTooltip.y + 10))
+            maxWidth: `min(270px, calc(100% - 24px))`,
+            left: clamp(hoverTooltip.x + 14, 8, Math.max(8, size.width - 240)),
+            top:
+              hoverTooltip.y > size.height * 0.64
+                ? Math.max(8, hoverTooltip.y - 70)
+                : clamp(hoverTooltip.y + 10, 8, Math.max(8, size.height - 88))
           }}
         >
           civil: {hoverTooltip.civilTime} · solar: {hoverTooltip.solarTime}

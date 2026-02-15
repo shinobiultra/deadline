@@ -8,7 +8,8 @@ export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: '**/gh-pages.spec.ts',
   timeout: 35_000,
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   use: {
     baseURL,
     trace: 'on-first-retry'

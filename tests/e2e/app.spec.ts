@@ -214,7 +214,66 @@ test('3d adds hover tooltip info and 2d/3d switching stays responsive', async ({
   expect(pageErrors).toEqual([])
 })
 
-test('debug layout checks report zero overlap/tap-target warnings on desktop', async ({ page }) => {
-  await page.goto('/?debug=1')
-  await expect(page.getByText(/warnings:\s*0/i)).toBeVisible({ timeout: 8_000 })
+test('edge-safe HUD has no corner overlaps across key viewports', async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 1080 },
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 }
+  ] as const
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.goto('/?debug=1')
+    await expect(page.getByText(/warnings:\s*0/i)).toBeVisible({ timeout: 8_000 })
+
+    const chip = page.getByTestId('deadline-chip')
+    const countdown = page.getByTestId('countdown-hud')
+    const layers = page.getByTestId('layers-button')
+
+    await expect(chip).toBeVisible()
+    await expect(countdown).toBeVisible()
+    await expect(layers).toBeVisible()
+
+    const topControls = await (async () => {
+      const compactMenu = page.getByTestId('top-controls-menu')
+      if ((await compactMenu.count()) > 0) {
+        return compactMenu
+      }
+      return page.getByTestId('top-controls')
+    })()
+    await expect(topControls).toBeVisible()
+
+    const boxes = await Promise.all([
+      chip.boundingBox(),
+      topControls.boundingBox(),
+      countdown.boundingBox(),
+      layers.boundingBox()
+    ])
+
+    for (const box of boxes) {
+      expect(box).toBeTruthy()
+      if (!box) {
+        continue
+      }
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
+    }
+
+    const validBoxes = boxes.filter((box): box is NonNullable<typeof box> => Boolean(box))
+    for (let i = 0; i < validBoxes.length; i += 1) {
+      for (let j = i + 1; j < validBoxes.length; j += 1) {
+        const a = validBoxes[i]
+        const b = validBoxes[j]
+        if (!a || !b) {
+          continue
+        }
+        const overlap =
+          a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+        expect(overlap).toBeFalsy()
+      }
+    }
+  }
 })

@@ -1,4 +1,4 @@
-# deadLINE (v0.4.0)
+# deadLINE (v0.4.1)
 
 ![deadLINE demo screenshot](docs/screens/demo-2d.png)
 
@@ -18,6 +18,7 @@ README requirement: keep a current demo screenshot at the very top so project pu
 - zustand + localStorage
 - vitest + fast-check + playwright
 - vite pwa (offline shell + cached static assets)
+- privacy-aware GA4 analytics (prod only, DNT-aware)
 - safe deadline slots + draft/apply workflow (prevents accidental overwrites)
 
 ## local setup
@@ -89,6 +90,7 @@ http://localhost:5173/?demo=1&view=detail
 9. Use `snap` to export a PNG and `share` to copy encoded URL state.
 10. In 3d, hover globe and verify tooltip includes civil time, solar time, and delta-to-target.
 11. Enable debug mode (`?debug=1` or `Ctrl+Shift+D`) and verify overlap warnings/capture tools.
+12. Validate edge-safe HUD on mobile width (`390x844`): chip/top controls/countdown/layers do not overlap.
 
 ## optional timezone polygon accuracy mode
 

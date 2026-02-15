@@ -36,6 +36,19 @@ function iconIntrudesTextArea(
   return iconRect.x < textRightEdge
 }
 
+function outsideViewport(
+  rect: DebugEntry['rect'],
+  viewport: { width: number; height: number },
+  margin: number
+) {
+  return (
+    rect.x < margin ||
+    rect.y < margin ||
+    rect.x + rect.width > viewport.width - margin ||
+    rect.y + rect.height > viewport.height - margin
+  )
+}
+
 function downloadText(filename: string, content: string, type = 'application/json') {
   const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
@@ -77,6 +90,29 @@ export function DebugOverlay({ enabled, rootRef, onClose, perf }: DebugOverlayPr
       const b = nextEntries.find((entry) => entry.key === bKey)
       if (a && b && intersects(a.rect, b.rect) && iconIntrudesTextArea(a.rect, b.rect)) {
         nextWarnings.push(`overlap: ${aKey} intersects ${bKey}`)
+      }
+    }
+
+    const viewport = { width: window.innerWidth, height: window.innerHeight }
+    const cornerHudKeys = ['hud-deadline-chip', 'hud-top-controls', 'hud-countdown', 'hud-layers']
+    const cornerHudEntries = nextEntries.filter((entry) => cornerHudKeys.includes(entry.key))
+
+    for (const entry of cornerHudEntries) {
+      if (outsideViewport(entry.rect, viewport, 8)) {
+        nextWarnings.push(`outside viewport: ${entry.key}`)
+      }
+    }
+
+    for (let i = 0; i < cornerHudEntries.length; i += 1) {
+      for (let j = i + 1; j < cornerHudEntries.length; j += 1) {
+        const first = cornerHudEntries[i]
+        const second = cornerHudEntries[j]
+        if (!first || !second) {
+          continue
+        }
+        if (intersects(first.rect, second.rect)) {
+          nextWarnings.push(`overlap: ${first.key} intersects ${second.key}`)
+        }
       }
     }
 
